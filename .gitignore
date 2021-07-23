@@ -25,6 +25,7 @@
 #.pdf
 .idea/
 .vscode/
+*.pyc
 
 ## Bibliography auxiliary files (bibtex/biblatex/biber):
 *.bbl
