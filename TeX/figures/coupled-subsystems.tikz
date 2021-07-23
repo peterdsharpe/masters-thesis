@@ -1,0 +1,100 @@
+\pgfdeclaredecoration{simple line}{start}
+{
+    \state{start}[width = +0pt,
+        next state=step]{
+        \pgfpathmoveto{\pgfpoint{0pt}{0pt}}
+    }
+    \state{step}[auto end on length    = 3pt,
+        auto corner on length = 3pt,
+        width=+1pt]
+    {
+        \pgfpathlineto{\pgfpoint{1pt}{0pt}}
+    }
+    \state{final}
+    {}
+}
+
+\begin{tikzpicture}
+
+
+    \providecommand\ntxt{}
+    \renewcommand{\ntxt}[1]{
+        \textbf{#1}
+    }
+
+    \tikzstyle{box} = [
+    draw=c1, fill=c1!20,
+    thick,
+    circle,
+%    ellipse, minimum height = 1cm, minimum width = 2.5cm,
+%    rectangele, rounded corners,
+    text width=2.8cm,
+    text centered
+    ]
+
+    \tikzstyle{line} = [draw, thick, ->,
+    shorten >=2pt, shorten <=2pt,
+    decorate, decoration={simple line, raise=4pt}
+    ]
+
+    \def \n {8}
+    \def \radius {7cm}
+    \def \offset {90 - 180 / \n}
+
+    \begin{scope} [every node/.style=box]
+
+        \node(aero) at ({-360/\n * (0) + \offset}:\radius) {\ntxt{Aerodynamics}};
+        \node(stru) at ({-360/\n * (1) + \offset}:\radius) {\ntxt{Structures}};
+        \node(prop) at ({-360/\n * (2) + \offset}:\radius) {\ntxt{Propulsion}};
+        \node(powe) at ({-360/\n * (3) + \offset}:\radius) {\ntxt{Fuel \& Power Systems}};
+        \node(stab) at ({-360/\n * (4) + \offset}:\radius) {\ntxt{Stability \& Control}};
+        \node(traj) at ({-360/\n * (5) + \offset}:\radius) {\ntxt{Trajectory \& Dynamics}};
+        \node(weig) at ({-360/\n * (6) + \offset}:\radius) {\ntxt{Weights}};
+        \node(geom) at ({-360/\n * (7) + \offset}:\radius) {\ntxt{Geometry}};
+
+    \end{scope}
+
+    \begin{scope} [every path/.style=line]
+
+        \path (aero) -- (stru); % loads
+%        \path (aero) -- (prop);
+        \path (aero) -- (stab); % flight dyn
+        \path (aero) -- (traj); % lift and drag
+
+        \path (stru) -- (aero); % static aerostructural
+        \path (stru) -- (stab); % flutter
+
+        \path (prop) -- (traj); % thrust force
+        \path (prop) -- (stru); % thrust force
+        \path (prop) -- (weig); % engine weight
+        \path (prop) -- (powe); % actual fuel burn rate
+
+        \path (stab) -- (traj); % control allows you to fly a trajectory
+
+        \path (traj) -- (prop); % ambient pressure, etc.
+        \path (traj) -- (aero); % ambient pressure, etc.
+
+        \path (weig) -- (traj); % weight force
+        \path (weig) -- (stab); % damping and inertias in flight dynamics
+        \path (weig) -- (stru); % structures need to support weight force
+
+        \path (powe) -- (prop); % maximum fuel flow rate / thrust
+        \path (powe) -- (weig); % fuel weight
+
+        \path (geom) -- (aero); % outer mold line
+        \path (geom) -- (stru); % spar dimensions
+        \path (geom) -- (weig); % size of internal structure sets weight
+
+    \end{scope}
+
+    \tikzstyle{labelline} = [draw, black!70, dashed, ->, shorten <=9pt]
+
+    \node(ga) at ($(aero)!0.5!(geom)$) {};
+    \node(gatext)[above=of ga, xshift=4cm, yshift=22pt, text centered] {Aero. loads depend on OML};
+    \path[labelline] (ga) edge[out=90, in=180] (gatext);
+
+    \coordinate(pt) at ($(prop)!0.3!(traj)$);
+    \node(pttext)[below=of prop, xshift=0.6cm, yshift=0.5cm, text centered, text width = 4.8cm] {Thrust force affects trajectory, but $V_\infty, \rho_\infty, T_\infty$ affect propulsor performance};
+    \path[labelline, shorten >=-10pt] (pt) to [bend right=10] (pttext);
+
+\end{tikzpicture}

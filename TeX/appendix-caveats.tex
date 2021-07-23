@@ -1,0 +1,33 @@
+\chapter{Design Optimization Rules of Thumb}
+
+Here, we present several design optimization guidelines that have been collected across various studies. These are especially applicable to the conceptual design of engineering systems, but can be considered in any part of the design cycle:
+
+\begin{enumerate}
+    \item \textbf{Engineering time is often part of the objective function.}
+    \begin{enumerate}
+        \item As the saying goes, 80\% of the results come from the first 20\% of the work: low-fidelity models go exceptionally far.
+        \item Make convenient modeling assumptions often and judiciously. (Of course, track these assumptions and revise models if needed.) It is often more time-efficient to start low-fidelity and only increase fidelity as needed, rather than vice versa.
+        \item Identify sensitive models, requirements, and assumptions, and track the uncertainty associated with each of these. The vast majority of engineering time should be spent on refining these sensitive elements.
+    \end{enumerate}
+    \item \textbf{Modeling "wide" rather than "deep" often yields more useful design insight.}
+    \begin{enumerate}
+        \item Generally, the conceptual design studies that are the most practical, useful, and robust are those that model a vast number of disciplines at low fidelity, rather than those that model one or two disciplines at a high fidelity.
+        \item In rare instances where high fidelity is truly required, surrogate modeling and reduced-order modeling is highly encouraged. It is of paramount importance that the optimization problem can be solved in seconds or minutes - if this is not the case, interactive design becomes prohibitively tedious.
+    \end{enumerate}
+    \item \textbf{Do not blindly trust an optimizer.}
+    \begin{enumerate}
+        \item An optimizer only solves the problem that you give it. (And this is in the best case!) Often, it is easy to forget constraints that seem intuitively obvious.
+        \item If any flaw exists in a physics model, the optimizer will exploit it. Models should extrapolate sensibly and generally be parsimonious. On objective functions, adding quadratic regularization is an effective last resort.
+        \item Without special care, optimized designs are almost always fragile. An optimizer will tend to naturally drive to the edge of the feasible space. However, in nature\footnote{Mother Nature being arguably the most successful optimizer}, optima are usually not near extremes.
+    \end{enumerate}
+    \item \textbf{When an incorrect result is returned, it's nearly always the "right solution to the wrong problem", rather than the "wrong solution to the right problem".}
+    \begin{enumerate}
+        \item If a strange solution, error, or indication of infeasiblity or unboundedness is reported when this was not expected, this often indicates an error in problem formulation. Common culprits are forgotten or unnecessary constraints, constraints that are unintentionally too loose or tight, duplicated constraints, etc.
+        \item If initial guesses or problem scales are off by many orders of magnitude, this can also cause convergence issues. Strong nonconvexities (e.g. a model interpolating noisy data) can also cause problems.
+    \end{enumerate}
+    \item \textbf{Optimization is just one tool in the design toolbox.}
+    \begin{enumerate}
+        \item An optimizer will answer sizing questions posed by an engineer, but it will not ask new questions on its own or sanity-check these results.
+        \item Design is an interactive process, and a "push-button" design optimizer will not exist for the foreseeable future.
+    \end{enumerate}
+\end{enumerate}

@@ -1,0 +1,268 @@
+\chapter{Modeling Tools}
+\label{chapter:modeling}
+
+
+\section{Geometry Stack}
+
+To be written\dots % TODO
+
+
+\section{Surrogate Modeling Tools}
+\label{sect:surrogate}
+
+It is critical that a general-purpose engineering design optimization framework such as AeroSandbox allows the use of user-defined physics models. These models can generally be classified into one of three categories:
+
+\begin{enumerate}[noitemsep]
+    \item \textbf{Analytical models}, which are often derived theoretically and can be specified concisely in closed-form. For example, an analytical relation for aircraft drag, as given by Drela \cite{drela-performance-lab} is:
+    \begin{equation}
+        C_D(\AR, S, \dots) = \frac{\text{CDA}_0}{S} + c_d(C_L, \text{Re}, \tau) + \frac{C_L^2}{\pi \AR}
+        \label{eq:analytical-drag}
+    \end{equation}
+    \begin{multicols}{2}
+        \begin{eqexpl}
+            \item{$C_D$} Drag coefficient
+            \item{$\AR$} Aspect ratio
+            \item{$S$} Wing area
+            \item{$\text{CDA}_0$} Fuselage drag area
+            \item{$c_d$} Profile drag coefficient
+            \item{$C_L$} Lift coefficient
+            \item{Re} Reynolds number
+            \item{$\tau$} Taper ratio
+        \end{eqexpl}
+    \end{multicols}
+
+    \item \textbf{Expensive models} that are the result of laborious, black-box external computation. Examples of this might include:
+
+    \begin{itemize}[noitemsep]
+
+        \item A RANS CFD code, or other analysis that requires the solution of 3D nonlinear PDEs
+        \item Aerostructural analysis with explicit time-domain dynamics
+        \item An external code that computes engine performance with non-equilibrium gas dynamics
+
+    \end{itemize}
+
+    \item \textbf{Data-driven models}, where the underlying input to the model is not a set of equations but rather a dataset. Common sources of this data include wind tunnel runs, meteorological data, or experimental testing on prototype components.
+
+\end{enumerate}
+
+Analytical models are trivially implemented into a differentiable optimization framework such as AeroSandbox using the techniques described in Chapter \ref{chapter:core}. However, the remaining two categories cannot generally be used in a straightforward way.
+
+In the case of expensive models, there are two key problems that make direct implementation unattractive. First, black-box functions break the differentiability trace, so they must be re-coded from scratch in a differentiable numerics framework. Although this is usually possible, it can be tedious. Secondly, expensive models in a SAND framework may yield an optimization problem that takes many minutes or hours to solve, precluding the practice of \textit{interactive design}.
+
+Data-driven models also come with their own set of challenges. First, one must obtain data of sufficient quantity (it spans the input space of the model) and quality (the data has minimal noise). Secondly, one must form some kind of strategy to evaluate the model between known data points (interpolation) and beyond known data (extrapolation).
+
+Both expensive models and data-driven models can be implemented into a differentiable optimization framework using \textit{surrogate modeling}. Surrogate modeling is a collection of techniques that aims to replace an expensive, data-driven, or otherwise unusable model with a differentiable, cheaply-evaluated model that approximates the original one.
+
+There are two general approaches to surrogate modeling: \textit{fitting} and \textit{interpolation}. Fitting aims to replace an expensive model or dataset with an analytical expression. Interpolation forgoes the need for an explicit analytical expression, instead interpolating from known data points using a piecewise spline.
+
+The present work provides computational tools for surrogate modeling using both of these approaches. In the following section, we detail both of these. We restrict our focus here to models of the form $f\ :\ \R^n \to \R^1$, because these are by far the most common types of models, and because vector-valued functions can be constructed by combining several scalar-valued functions.
+
+\subsection{Fitted Models}
+\label{sect:fitting}
+
+One approach to creating a surrogate model is curve fitting, or more formally, \textit{regression}. Fitting is the process of deriving an analytical model that approximates a function from which samples have been drawn. An infinite number of fitted models could be regressed from a given dataset, and choosing which of these models is best is an optimization problem. Specifically, we can write the fitting problem as follows, following notation from \cite{koch2019}:
+
+\begin{example}
+
+    \noindent
+    \textbf{The Canonical Fitting Problem} (Least-squares Regression)
+
+    \noindent
+    We are given a dataset that consists of $m$ entries. Each entry maps from $\vec{x} \in \R^n $ to $ y \in \R^1 $. We collectively refer to the inputs and outputs of the dataset as $\mat{X}$ and $\vec{y}$, respectively.
+
+    A model format is also provided, which includes some unknown parameters $\vec{\theta}$. We then denote the model outputs as:
+
+    \begin{equation}
+        \vec{y}_\text{model} = \text{model}\big(\mat{X}, \vec{\theta}\big)
+        \label{eq:fitting-model}
+    \end{equation}
+
+    \noindent
+    The error of this model at each of the $m$ data points is then:
+
+    \[ \vec{e} = \vec{y}_\text{model} - \vec{y} \]
+
+    \noindent
+    We then seek to find the optimal value of the model parameters $\vec{\theta}$ by solving the following optimization problem:
+
+    \begin{argmini}
+    {\vec{\theta}}{ \big\Vert \vec{e} \big\Vert _2 }
+    {}{\vec{\theta}^* = }
+        \label{eq:fitting}
+    \end{argmini}
+
+    The vector norm in the objective Eq. \ref{eq:fitting} can be rewritten as $ \big\Vert \vec{e} \big\Vert _2 = \sqrt{\sum_{i=1}^m e_i^2 } $. Because the square root function is monotonic in the positive domain, it can be removed without changing the value of $\vec{\theta}^*$. This is convenient, as the objective function now tends to be more closely approximated by a quadratic\footnote{In the case of \textit{linear} least-squares regression, the objective is now exactly quadratic and admits closed-form solution.}, dramatically improving numerical performance. Therefore, the fitting problem can be expressed as:
+
+    \begin{argmini}
+    {\vec{\theta}}{ \sum_{i=1}^m e_i^2 }
+    {}{\vec{\theta}^* = }
+        \label{eq:fitting-l2}
+    \end{argmini}
+
+\end{example}
+
+This forms the canonical fitting problem, also known as least-squares regression. Because Equation \ref{eq:fitting} is an optimization problem with entirely glass-box functions, it is efficiently differentiated and solved by AeroSandbox. This functionality is provided by the \mintinline{python}{asb.FittedModel} class, which acts both as the fitting solver (performed upon instantiation) and the callable model itself.
+
+The generality of the model format in Eq. \ref{eq:fitting-model} is quite powerful, as the fitting routine presented here can use any composition of elementary operators as its model format. In addition, this optimization approach can fit piecewise functions and expressions that can only be tractably expressed in code (e.g. model formats with loops, complicated conditionals). The AeroSandbox \mintinline{python}{FittedModel} implementation can also be used to fit datasets with general multidimensional inputs. Furthermore, because the fitting optimization problem can utilize fast gradients via automatic differentiation, fitting performance scales efficiently with parameter dimensionality\footnote{analogous to the scaling seen in Figure \ref{fig:nd-rosen}}.
+
+\subsubsection{Example: Wind Analysis}
+
+The power of this generality is demonstrated in Figure \ref{fig:fitting-wind}, where the AeroSandbox \mintinline{python}{FittedModel} routine is used to regress a model for peak\footnote{Quantified as the 99th-percentile of wind speed over time} wind speeds at various points in the atmosphere above the continental United States in August\footnote{Averaged over years 1979-2020}. This model holds great importance for high-altitude long-endurance (HALE) aircraft design: the primary failure mode of HALE aircraft in the past two decades has been in-flight aerostructural failure exacerbated by wind gusts. The underlying 2D dataset in this example was obtained via statistical analysis of the ERA5 Global Reanalysis meteorological dataset \cite{era5}.
+
+\begin{figure}[H]
+    \centering
+%    \input{figures/fitting-wind.pgf}
+    \ifdraft{}{\input{figures/fitting-wind.pgf}}
+    \caption{An demonstration of \mintinline{python}{asb.FittedModel}, where an 18-parameter analytical model is fitted to a multidimensional, aerospace-relevant example dataset.}
+    \label{fig:fitting-wind}
+\end{figure}
+
+There is a clear and strong nonlinearity present in this dataset, evidenced by the sharp rise in peak wind speeds near (15 km altitude, 50 deg. N latitude). This nonlinearity, which depicts the Arctic polar vortex of the jet stream, makes this a challenging dataset to fit. Here, an 18-parameter model consisting of a combination of polynomials and Gaussian-like terms was used to fit the data.
+
+The resulting model from this fitting process is not only cheaply evaluated, but it is also end-to-end automatic differentiable. This means that it can be used as desired in the optimization framework described in Chapter \ref{chapter:core}. Fitting also tends to remove noise from the dataset, which makes optimization much more well behaved. This noise removal occurs because the fit is essentially a projection of the dataset noise (generally relatively high-spatial-frequency\footnote{In the common case of uncorrelated random error, the noise follows a \textit{white noise} spectrum}) onto the mode shapes associated with model linearization with respect to $\vec{\theta}$ (generally relatively low-spatial-frequency). Because of these desirable properties, curve fitting is a good tool for creating surrogate models from experimental or synthetic datasets.
+
+The classical ordinary least-squares fitting problem described in Equation \ref{eq:fitting} can be extended in several interesting ways in order to obtain fits with more desirable characteristics. Several of these generalizations have been implemented into the AeroSandbox surrogate modeling toolkit via the \mintinline{python}{asb.FittedModel} class. These features are described in the following sections.
+
+\subsubsection{Generalization to Various $L_p$ Norms}
+
+The fitting problem specified in Eq. \ref{eq:fitting} minimizes the $L_2$ norm of the error vector $\vec{e}$, a process known as least-squares fitting. This fitting problem can be generalized by instead minimizing various $L_p$ norms of the error vector. In general, the $L_p$ norm of the error vector can be expressed as:
+
+\begin{equation}
+    \big\Vert \vec{e} \big\Vert _p = \bigg( \sum_{i=1}^m e_i^p \bigg)^{1/p}, \qquad p \in [1, \infty)
+    \label{eq:norms}
+\end{equation}
+
+\noindent
+By analogy to Eq. \ref{eq:fitting-l2}, the fit optimization problem associated with this equation is often solved more easily after elimination of the (monotonic) root function.
+
+Of particular interest are the $L_1$ and $L_\infty$ norms, which can be expressed in special form derived from limit analysis of Eq. \ref{eq:norms}:
+
+\begin{equation*}
+    \big\Vert \vec{e} \big\Vert _1      = \sum_{i=1}^m |e_i|
+    \qquad\qquad
+    \big\Vert \vec{e} \big\Vert _\infty = \max\big(|e_1|, |e_2|, \dots, |e_m|\big)
+\end{equation*}
+
+\noindent
+These norms are of special interest for two reasons. First, they represent the extremes of the $L_p$ norm family. Secondly, the fitting problem associated with them can be more efficiently expressed with a reasonable\footnote{more precisely, a finite number of constraints that is of $\order(m)$} number of constraints\footnote{and in particular, \textit{linear} constraints in the case of linear regression}, as shown by analogy to Figure \ref{fig:opti-norms}.
+
+The primary practical distinction between fits using these various norms is their response to outliers. This is demonstrated in Figure \ref{fig:fitting-norm}, where fits are made to a synthetic example dataset that contains an outlier. The $L_1$ fit largely eschews the influence of the outlier, essentially discarding the outlier as a \textit{systematic} error rather than a \textit{random} one. The $L_\infty$ fit is the opposite, as it seeks to minimize the maximum deviation; essentially this treats the outlier as a random error that still conveys useful information about the underlying model.
+
+\begin{figure}[H]
+    \centering
+%    \input{figures/fitting-norm.pgf}
+    \ifdraft{}{\input{figures/fitting-norm.pgf}}
+    \caption{Fitting with various norms on an synthetic dataset with an outlier.}
+    \label{fig:fitting-norm}
+\end{figure}
+
+Neither approach is universally superior; they simply represent different prior beliefs about the likely source of error as a function of model deviation. Surrogate modeling from a synthetic dataset derived from high-fidelity computational simulation is likely best served by $L_\infty$ fitting, as the noise in the dataset is generally assumed to be zero. The $L_\infty$ fit will enforce the tightest possible bound on the deviation from the high-fidelity dataset.
+
+On the other hand, an $L_1$ fit might be expected to produce superior results for an experimental dataset. This is because the systematic errors sometimes found in experiment can yield outliers that convey no useful information about the underlying physics. The example dataset in Figure \ref{fig:fitting-norm}, which simulates an experimental dataset with measurement dropout, is clearly better served by the robust $L_1$ fit.
+
+%\subsubsection{Weights}
+
+% TODO
+
+\subsubsection{Parameter and Model Bounds}
+
+Another useful feature of the AeroSandbox fitting submodule is the ability to easily perform constrained fitting. This can take two forms:
+
+\begin{enumerate}
+    \item \textbf{Parameter bounds}: the vector of fit parameters $\vec{\theta}$ can be directly given bounds constraints, which can be used to stabilize the fit process on nonconvex problems.
+    \item \textbf{Model bounds}: the error vector $\vec{e}$ can be constrained such that the fitted model represents either an upper or lower bound on the dataset. This is quite useful in engineering practice, as it allows the creation of surrogate models that can be guaranteed to be conservative with respect to the original dataset. This reduces the likelihood that an optimization problem that includes a fitted model will result in an optimum that is infeasible according to the true underlying physics.
+\end{enumerate}
+
+This second process of adding model bounds is demonstrated in the fits in Figure \ref{fig:constrained-fitting}. Here, a drag polar for a SD7032 airfoil at $\text{Re}=10^6$ is fit using \mintinline{python}{asb.FittedModel} and a quadratic model. This quadratic model is a common approximation for an airfoil's profile drag polar; for example, this approximation is seen in the QProp propeller design code by Drela \cite{qprop}. Here, using an upper-bound fit to model profile drag means that downstream optimization using this model will be more robust to surrogate modeling error.
+
+\begin{figure}[H]
+    \centering
+%    \input{figures/constrained-fitting.pgf}
+    \ifdraft{}{\input{figures/constrained-fitting.pgf}}
+    \caption{Robust fitting of an example drag polar with model bounds.}
+    \label{fig:constrained-fitting}
+\end{figure}
+
+\subsubsection{Log-transformed Errors}
+
+A final note here is that many outputs of engineering models are more physically relevant when considered in a log-transformed sense. In other words, the goodness of fit is a function of the relative (multiplicative) error rather than the absolute (additive) error.
+
+A common example quantity that demonstrates this phenomenon is aerodynamic drag, which tends to approximately follow a power law with respect to Reynolds number. For illustration, we consider the case of the drag coefficient on a cylinder in crossflow. Experimental data plotted in Panton \cite{Panton} (reproduced here in Fig. \ref{fig:cylinder-drag}) found drag coefficients ranging from approximately 0.25 to 500, depending on Reynolds number. Indeed, in the $\text{Re} \to 0$ (i.e. Stokes flow) limit, this drag coefficient exactly follows a power law and is unbounded\footnote{This is because the drag force $D$ becomes linearly proportional to the freestream velocity $U_\infty$ in the Stokes limit, rather than the usual $D \propto U_\infty^2$.}.
+
+Using the AeroSandbox fitting module, a relatively parsimonious analytical model can be fit that accurately predicts (and extrapolates) cylinder drag for any Reynolds number. Surprisingly, the author has not found any other such universal model for cylinder drag in the literature.
+
+Because of the logarithmic importance of drag coefficient, the fitting module \mintinline{python}{asb.FittedModel} is supplied with \mintinline{python}{put_residuals_in_logspace=True} at initialization. The resulting model, which minimizes log-transformed error with respect to the experimental dataset, is as follows:
+
+\newcommand{\logt}{\log_{10}}
+\newcommand{\logtr}{\logt(\text{Re})}
+
+\begin{example}
+    \noindent
+    \textbf{Cylinder Drag Fitted Model}
+
+    \noindent
+    First, models for subcritical (i.e. below drag crisis) and supercritical drag are computed:
+    \begin{equation*}
+        \begin{aligned}
+            r &= \logtr \\
+            C_{D\text{, subcrit}} &= 10^ {-0.6739 r + 1.0355} + 0.6325 + 0.1006 r \\
+            \logt(C_{D\text{, supercrit}}) &= -0.1200 - 0.04615 \ln\bigg[\exp\big(10 \cdot (6.7016 - r)\big) + 1 \bigg] \\
+        \end{aligned}
+    \end{equation*}
+
+    \noindent
+    Then, these equations are blended together using a sigmoid:
+    \begin{equation}
+        \begin{aligned}
+            \sigma(r) &= \frac{\tanh \big[12.597 \cdot (r - 5.547)\big] + 1}{2} \\
+            C_D &= \sigma(r) \cdot C_{D\text{, supercrit}} + \big[1 - \sigma(r)\big] \cdot C_{D\text{, subcrit}} \\
+        \end{aligned}
+    \end{equation}
+\end{example}
+
+\noindent
+The fit of this model to the experimental data from \cite{Panton} is shown in Figure \ref{fig:cylinder-drag}.
+
+\begin{figure}[H]
+    \centering
+%    \centerline{\input{figures/cylinder-drag-fitting.pgf}}
+    \ifdraft{}{\centerline{\input{figures/cylinder-drag-fitting.pgf}}}
+    \caption{Analytical fitting of cylinder drag data from Panton \cite{Panton}. Fit minimizes the $L_1$-norm of log-transformed error.}
+    \label{fig:cylinder-drag}
+\end{figure}
+
+\subsection{Interpolated Models}
+\label{sect:interpolation}
+
+Another approach to creating surrogate models is interpolation. Interpolation forgoes the need for an analytic expression, instead representing the surrogate model in the form of a lookup table with rules for computing intermediate values. Interpolation is implemented in AeroSandbox via the syntax \mintinline{python}{asb.InterpolatedModel}, with inputs that are analogous to those for fitted models.
+
+There are several challenges with interpolation that must be addressed in order to use an interpolated model in a differentiable optimization framework:
+
+\begin{enumerate}
+    \item Interpolated models must be at least $C_1$-continuous, following the logic in Section \ref{sect:differentiability}. This means that many common interpolation techniques, such as linear interpolation, are not permissible. In AeroSandbox, this is solved by defaulting to a b-spline interpolation that consists of piecewise cubic polynomial patches; this is therefore a $C_2$-continuous representation and can be adequately treated with modern gradient-based optimization algorithms.
+    \item Interpolated models must extend to multidimensional datasets with an arbitrary number of inputs.
+\end{enumerate}
+
+This combination of requirements is quite tricky to satisfy, and hence few underlying packages support this. For example, the SciPy library that forms the standard toolbox for scientific computing in Python only supports spline interpolation on 1D and 2D datasets \cite{scipy}. Thankfully, the CasADi automatic differentiation library \cite{casadi} includes routines that enable $n$-dimensional spline interpolation, so these have been wrapped for use in AeroSandbox.
+
+These $n$-dimensional spline interpolators are demonstrated in Figure \ref{fig:interpolated-xfoil-3d}, where a synthetic dataset depicting lift of a SD7032 airfoil is turned into a surrogate model using the AeroSandbox interpolator library. Here, the $C_2$ continuity of the piecewise-cubic interpolation is clearly visible.
+
+\begin{figure}[H]
+    \centering
+%    \input{figures/interpolated-xfoil-3d.pgf}
+    \ifdraft{}{\input{figures/interpolated-xfoil-3d.pgf}}
+    \caption{An interpolated model for airfoil $C_L$ from a multidimensional dataset computed by XFoil \cite{xfoil}.}
+    \label{fig:interpolated-xfoil-3d}
+\end{figure}
+
+This lookup-table approach to surrogate modeling is quite convenient to use when compared to the fitting approach described in Section \ref{sect:fitting}. With a high-quality dataset, little-to-no engineering effort is need to create a surrogate model; by contrast, the fitting approach requires engineering intuition about the type of analytical model that best describes the data.
+
+However, this interpolation approach is not without drawbacks. First, the b-spline interpolators implemented in AeroSandbox have no ability to reject noise - surrogate models will always pass exactly through input data points (as these form the knots of the spline). Splines also do not preserve monotonicity of the dataset: on datasets with low signal-to-noise ratios\footnote{In particular, this is an issue on some experimental datasets}, this can lead to wild oscillations as the interpolator attempts to model the random noise. This can even occur on datasets with moderate noise if the input space is not approprately sampled\footnote{Often, typical linear full-factorial sampling is quite a poor choice; using Chebyshev nodes often produces far superior results for a given number of data points. A fuller description is given in Chapter 13 of \cite{koch2019}.}, a numerical problem known as Runge's phenomenon. Noisy datasets can also be effectively used if they are pre-processed by smoothing with several passes of a Laplacian (i.e. "heat equation") kernel. This process, sometimes referred to as the application of a \textit{Gaussian blur}, yields more well-behaved interpolators at the cost of accuracy to the original dataset.
+
+The lookup-table approach also necessitates the use of structured (i.e. gridded in $n$ dimensions) data, rather than unstructured (i.e. "point cloud") data. This is because the interpolation consists of a collection of piecewise polynomials, and these polynomials must be linked back to specific knot points (drawn from the dataset) to determine their shape. With unstructured data, it is quite difficult to know which knot points should be used for a given polynomial.
+
+Most synthetic datasets (e.g. those from expensive, high-fidelity computational analysis) tend to be structured, so this is not a problem. Conveniently, these datasets also tend to lend themselves well to interpolation as they generally have no random noise.
+
+On the other hand, many experimental datasets tend to be unstructured, which prohibits the use of AeroSandbox interpopation as-is. Hence, fitting is generally preferred. Fitting also tends to be a superior choice for experimental datasets due to their better noise rejection.
+
+In the event that interpolation is desired on an unstructured dataset, an approach that has been proven successful is to interpolate the unstructured dataset onto a structured grid using a radial basis function (RBF) interpolator, at which point the AeroSandbox spline interpolator in \mintinline{python}{asb.InterpolatedModel} can be used.

@@ -1,0 +1,56 @@
+\begin{tikzpicture}[
+    auto,
+    node distance = 0.6cm and 0.6cm,
+    mylabel/.style={anchor=north west,font=\bfseries, color=black}
+]
+
+    \tikzstyle{int} = [
+    thick,
+    rectangle, rounded corners,
+%    minimum width = 4cm,
+    minimum height=4.9cm,
+    draw=c1,  fill=c1!20,
+    text centered,
+    ]
+    \tikzstyle{ext} = [int, draw=c2, fill=c2!20]
+    \tikzstyle{line} = [draw, thick, ->, shorten >=2pt, shorten <=2pt]
+
+    \node (l2) [int, label={[mylabel]north west:$L_2$-minimization of $\vec{g}(\vec{x})$:}] {
+        \begin{minipage}{5cm}
+            \begin{mini*}
+                |s|
+                    {\vec{x}}{\sum_{i=1}^m g_i(\vec{x})^2}
+                    {}{}
+            \end{mini*}
+
+            \vfill
+        \end{minipage}
+    };
+    \node (l1) [int, left=of l2, label={[mylabel]north west:$L_1$-minimization of $\vec{g}(\vec{x})$:}] {
+        \begin{minipage}{5cm}
+            \begin{mini*}
+                |s|
+                    {\vec{x}, \vec{y}}{\sum_{j=1}^n y_j}
+                    {}{}
+                    \addConstraint{\vec{y} \geq \vec{g}(\vec{x})}
+                    \addConstraint{\vec{y} \geq -\vec{g}(\vec{x})}
+            \end{mini*}
+
+            \vfill
+        \end{minipage}
+    };
+    \node (linf) [int, right=of l2, label={[mylabel]north west:$L_\infty$-minimization of $\vec{g}(\vec{x})$:}] {
+        \begin{minipage}{5cm}
+            \begin{mini*}
+                |s|
+                    {\vec{x}, y}{y}
+                    {}{}
+                    \addConstraint{y \geq \vec{g}(\vec{x})}
+                    \addConstraint{y \geq -\vec{g}(\vec{x})}
+            \end{mini*}
+
+            \vfill
+        \end{minipage}
+    };
+
+\end{tikzpicture}

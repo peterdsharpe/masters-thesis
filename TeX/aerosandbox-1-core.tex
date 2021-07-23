@@ -1,0 +1,1243 @@
+\chapter{Core Tools: Optimization and Numerics}
+\label{chapter:core}
+
+
+\section{Optimization Stack}
+
+\newcommand{\opti}{\texttt{Opti}}
+
+The heart of AeroSandbox is the \opti\ stack: an object-oriented framework for formulating and solving the continuous, nonlinear, nonconvex optimization problems that occur frequently in engineering design.
+
+The \opti\ stack is explicitly designed to be easy to learn and use for users who are not optimization specialists: design problems can be specified in natural, human-readable syntax, as demonstrated in Listing \ref{listing:constrained-rosen}. Furthermore, many problem transformations (e.g. scaling heuristics, equation re-ordering, sparsity exploitation) are employed without user input in order to enhance solver speed and numerical stability on ill-posed problems.
+
+%Because of AeroSandbox's core paradigm of formulating all problems (including analysis problems) within an optimization framework, the \opti\ stack is ubiquitous throughout AeroSandbox.
+
+%One of the core principles of AeroSandbox is that *everything* is an optimization problem. Even for problems that look like pure analysis ("I already have a design, how well does it perform?"), there's a beautiful duality between optimization and analysis through something called "Simultaneous Analysis and Design" - more on this later. Because of this, the `Opti` stack is truly ubiquitous throughout AeroSandbox.
+
+\subsection{Optimization Algorithms}
+\label{sect:ipopt}
+
+The underlying optimization code used in AeroSandbox is IPOPT, a large-scale optimizer for general nonlinear programming written in C++ by Wächter \cite{ipopt}. IPOPT is a modern second-order gradient-based (quasi-Newton) filter line-search optimizer. Constraints are enforced using a primal-dual interior-point method, and a restoration algorithm is used to allow infeasible starts and stabilize the iteration process. More details about interior-point methods for nonlinear programming are available in Nocedal and Wright \cite{nocedal2006}.
+
+A second-order gradient-based method was chosen due to the high dimensionality of aerospace design problems, as described in Section \ref{sect:high-dim-opt}. Empirically, this leads to good performance. Lyu et al. benchmarked a suite of optimization algorithms including IPOPT on an optimization test problem as well as an engineering design optimization problem; IPOPT was found to perform competitively, even amongst other quasi-Newton algorithms such as SNOPT and SLSQP \cite{lyu2014}. Wächter tested the IPOPT code on 954 canonical problems from the CUTEr test set and found a success rate of 93.8\%, markedly above other competitive codes at the time of publication \cite{ipopt}. Furthermore, IPOPT is generously released under an open-source license, enabling it to be freely bundled with CasADi, and, by extension, AeroSandbox.
+
+Yet another reason that IPOPT is an attractive choice of optimizer is that it gracefully handles sparsity in the constraint Jacobian matrix. Time-dependent engineering problems, such as trajectory optimization problems, often lead to sparsity in the constraint Jacobian; exploiting this by integrating with sparse linear algebra libraries can result in significant speed improvements.
+
+% TODO link to example constraint jacobian
+
+One drawback of using IPOPT is that, unlike most interior-point optimziation algorithms, intermediate iterates do not necessarily stay feasible, even if the initial guess is feasible. This is demonstrated in Lyu et al., where the Rosenbrock example using IPOPT shows infeasible intermediate iterates\footnote{Of course, the algorithm quickly returns to the feasible space and terminates at a point that is both feasible and optimal.} despite a feasible start \cite{lyu2014}. One implication of this attribute is that physics models used in AeroSandbox should \textit{extrapolate sensibly}: physically-plausible (even if not strictly-speaking correct) results should be returned for any design variable inputs; regardless of feasibility. This increases the likelihood that the associated gradient information at the iterate will send subsequent iterates back to the feasible space.
+
+\subsection{Automatic Differentiation for Efficient Derivatives}
+\label{sect:ad}
+
+IPOPT, like any gradient-based optimization algorithm, relies on accurate computation of gradient (and Hessian) information in order to progress its search. Traditionally, this gradient computation has been the severe computational bottleneck limiting performance of large-scale gradient-based optimization.
+
+Over the years, many strategies have been developed in order to compute this gradient. AeroSandbox employs a technique called \textit{automatic differentiation} (AD) that allows highly efficient, accurate, and scalable gradient computation, implemented through the CasADi differentiation library \cite{casadi}. Here, we describe automatic differentiation as it is used in AeroSandbox and how this method compares to other gradient computation techniques.
+
+It is instructive to first examine several other popular gradient computation methods to clarify what automatic differentiation is not:
+
+\subsubsection{Finite-Differencing (Numerical Differentiation)}
+
+One of the more intuitive methods of gradient computation comes from the limit definition of the derivative. First considering a scalar-valued function $f(x): \R^1 \to \R^1$, we note that:
+
+\begin{equation}
+    \pdiff{f}{x}\Big|_{x=x_0} = \lim_{h\to 0} \frac{f(x_0 + h) - f(x_0)}{h}
+\end{equation}
+
+For numerical computation of the derivative, some small but nonzero $h$ value is used, providing an approximation to the local derivative. This idea can also be generalized to functions with multiple inputs by repeated application of this method. Specifically, if $\hat{e}_i$ represents the unit vector in the $i$\textsuperscript{th} direction, and we take some function $f(\vec{x}): \R^n \to \R^1$:
+
+\begin{equation}
+    \pdiff{f}{x_i}\Big|_{\vec{x}=\vec{x}_0} \approx \frac{f(\vec{x}_0 + h\hat{e}_i) - f(\vec{x}_0)}{h}
+    \label{eq:fd}
+\end{equation}
+
+This calculation is then repeated for each of the $n$ directions, at which point a gradient vector can be constructed:
+
+\begin{equation}
+    \nabla f = \begin{bmatrix}
+                   \pdiff{f}{x_1} \\
+                   \pdiff{f}{x_2} \\
+                   \dots \\
+                   \pdiff{f}{x_n} \\
+    \end{bmatrix}
+\end{equation}
+
+The finite-difference method has the significant advantage that $f(\vec{x})$ can be any \textit{black-box function}; that is, no information needs to be known about the inner workings of the function in order to compute a derivative with this method. This makes finite-differencing an excellent "last-resort" method when other, more sophisticated methods fail. However, there are also several catastrophic drawbacks with finite-differencing.
+
+The most significant drawback is that finite differencing scales extremely poorly to gradient computation of high-dimensional functions, such as those that often occur in aircraft design. For a function $f(\vec{x}): \R^n \to \R^1$, gradient computation requires $n$ evaluations of Equation \ref{eq:fd}. Of course, the $f(\vec{x}_0)$ term can be reused after the first evaluation, but the $f(\vec{x}_0+h\hat{e}_i)$ term must be evaluated $n$ times. Thus, every gradient computation requires $n+1$ evaluations of the function $f$, leading to $\order(n)$ time scaling.
+
+This problem is exacerbated for higher derivatives, such as the local Hessian of $f(\vec{x})$ at $\vec{x}_0$. Computation of the Hessian requires $\order(n^2)$ function evaluations, which is even more intractable for large $n$.
+
+A second drawback of gradient computation via finite differences is that it leads to inaccurate gradient computation. Following Equation \ref{eq:fd}, the gradient approximation clearly becomes more accurate as $h$ is decreased (i.e. the truncation error is reduced). However, in the small-$h$ limit, computational evaluation of this equation requires the subtraction of two numbers that are infinitesimally close. This leads to large floating-point error that dwarfs the truncation error. Thus, there is an optimal step size $h$ that balances these two error sources and leads to minimum error. If we consider computation of a first-order forward difference (as in Equation \ref{eq:fd}) using double-precision floating-point arithmetic with precision\footnote{defined here as the difference between $1$ and the next-largest representable number} $\epsilon = 2^{-53} \approx 10^{-16}$, this optimal $h$ is roughly\footnote{for an example function with a Hessian locally equal to the identity matrix} $\order(10^{-8})$. More generally, first-order finite differences with optimal step size generally have an accuracy of $\order(\sqrt{\epsilon})$. This phenomenon is illustrated graphically in \cite{mdobook}.
+
+One might try to increase gradient precision by using a second-order difference scheme, such as the central difference method described in Equation \ref{eq:central-diff}:
+
+\begin{equation}
+    \pdiff{f}{x_i}\Big|_{\vec{x}=\vec{x}_0} \approx \frac{f(\vec{x}_0 + h\hat{e}_i) - f(\vec{x}_0 - h\hat{e}_i)}{2h}
+    \label{eq:central-diff}
+\end{equation}
+
+However, this has the unfortunate side-effect of exacerbating the first drawback of finite-difference methods; namely, gradient computation in $n$ dimensions now requires $2n$ function evaluations. The accuracy improvement is also mediocre; although the optimal step size drops, gradient accuracy remains only at $\order(\epsilon^{2/3})$, or $\approx \order(10^{-10})$ for double-precision arithmetic.
+
+\subsubsection{Complex-Step Differentiation}
+
+A modification of the finite-difference approach that attempts to alleviate the floating-point arithmetic problem is the complex-step method. The complex-step method works on any complex-differentiable (also known as \textit{analytic} or \textit{holomorphic}) function. Fortunately, most mathematical operators used in engineering design (e.g. elementary functions) are analytic, and compositions of analytic functions are also analytic. For any such analytic function, the Cauchy-Riemann equations hold. For the purposes of complex-step differentiation, only the first Cauchy-Riemann equation is of particular importance; it is listed in Equation \ref{eq:cauchy-riemann-1}:
+\begin{equation}
+    \begin{split}
+        \text{For the complex decomposition } f(x+iy) &= u(x, y) + i v(x, y) \text{,}\\
+        \pdiff{u}{x} &= \pdiff{v}{y}
+    \end{split}
+    \label{eq:cauchy-riemann-1}
+\end{equation}
+
+Noting that $\pdiff{u}{x} = \pdiff{f}{x}$ holds for points on the real line\footnote{for functions of engineering design interest} (which are the points of interest in engineering design), we can rewrite a forward-difference derivative rule as:
+
+\begin{equation}
+    \pdiff{f}{x}\Big|_{x=x_0} \approx \lim_{h \to 0} \frac{f(x_0 + ih) - f(x_0)}{ih}
+\end{equation}
+
+Or, after simplification (noting that for practical $f$, $f(x) \in \R$ if $x \in \R$):
+
+\begin{equation}
+    \pdiff{f}{x}\Big|_{x=x_0} \approx \lim_{h \to 0} \frac{\operatorname{Im}\big(f(x_0 + ih)\big)}{h}
+\end{equation}
+
+This complex-step differentiation has several advantages over finite-differencing. First, it is higher-order - a complex-step forward-difference has $\order(h^2)$ truncation error, as opposed to the $\order(h)$ error seen with a real-step forward-difference. However, more importantly, floating-point error does not occur as there is no subtractive cancellation in the derivative computation. This means that an arbitrarily small step size $h$ can be taken, invariably leading to a gradient error at machine precision (i.e. $\order(\epsilon)$).
+
+However, some problems of finite-differencing remain. Most prominently, gradient computation for functions of $n$ dimensions still requires $\order(n)$ function evaluations, which is unacceptably slow for large problems.
+
+On the other hand, complex-step differentiation introduces several new disadvantages.
+
+First, there are very few situations where use of the complex-step derivative is the optimal choice: it requires the bizarre scenario of a black-box function that happens to already support complex math with proper analytic continuation. This is almost never the case, as engineering tools in aerospace\footnote{barring special cases such as signal analysis, controls, or radar-cross-section computation} rarely expect complex inputs, and most black-box analysis tools are written in statically-typed languages. In statically-typed languages (e.g. C++, C, Fortran), enabling complex math requires editing the source code, something that is not possible for black-box functions. In dynamically-typed languages (e.g. Python, Julia, MATLAB), complex-step differentiation can usually be performed easily enough, although operator overloading with dual numbers\footnote{effectively a basic implementation of \textit{forward-mode automatic differentiation}, described later} is more accurate and generally much more computationally efficient.
+
+Secondly, adding complex math support often results in a significant computational bottleneck, as compilers and libraries are often not optimized for high-performance complex math, instead focusing on real floating-point arithmetic.
+
+Thirdly, no clear extension exists to use complex-step differentiation to compute higher-order derivatives, such as the Hessian. The Cauchy-Riemann equations only constrain on the first partial derivative, so different or extended techniques are needed for higher-order derivatives.
+
+Finally, the claimed precision advantage of complex-step over finite-differencing is misleading, as switching from real to complex numbers typically doubles the number of stored bits for a floating-point number. Consider the following illustrative example:
+
+
+
+\begin{example}
+    A real double-precision floating-point arithmetic number ("double") is represented by 64 bits\footnote{as described in the IEEE 754 standard}. A real forward finite difference with optimal step size produces an error of size $\order(\sqrt{\epsilon}) \approx \order(10^{-8})$.
+
+    A complex double is represented by 128 bits (64 for the real part, and 64 for the imaginary part). A complex-step derivative produces error of size $\order(\epsilon) \approx \order(10^{-16})$. It is more accurate, but computation is slower because all variables take up twice memory as before.
+
+    A fairer comparison is to examine a quad-precision floating-point arithmetic number, which is also represented by 128 bits. A real forward finite difference here produces an error again of size $\order(\sqrt{\epsilon})$, although since $\epsilon$ has shrunk to $\approx 10^{-34}$, this corresponds to an error of $\order(10^{-17})$.
+\end{example}
+
+So, a complex-step derivative does not produce any additional derivative precision over finite-difference when variable bit count (and accordingly, computational speed) is controlled for. Therefore, the major claimed benefit of complex-step differentiation is lost, and this method is largely a mathematical curiosity with little practical benefit.
+
+\subsubsection{Symbolic Differentiation}
+
+Symbolic differentiation is the process of computing an explicit derivative (either by hand or with the aid of a computational symbolics engine) and hard-coding that as the derivative to a function of interest. For example:
+
+\begin{equation}
+    \begin{split}
+        \text{Function of interest: } L(\rho, V, C_L, S) &= \frac{1}{2} \rho V^2 C_L S \\
+        \text{Gradient: } \nabla L = \begin{bmatrix}
+                                         \pdiff{L}{\rho} \\
+                                         \dots \\
+                                         \pdiff{L}{S}\\
+        \end{bmatrix} &= \begin{bmatrix}
+                             \frac{1}{2} V^2 C_L S \\
+                             \dots \\
+                             \frac{1}{2} \rho V^2 C_L \\
+        \end{bmatrix}\\
+    \end{split}
+\end{equation}
+
+These gradients can then be directly coded to be used as needed. An advantage of this approach is that gradients can generally be computed at machine precision.
+
+However, the $\order(n)$ scaling problem still exists, as a gradient computation requires the evaluation of $n$ partial derivatives.
+
+Furthermore, symbolic differentiation suffers from "expression swell". Examination of any elementary differentiation table in a calculus table will reveal that derivatives of functions tend to be longer than the functions themselves. Therefore, explicit representations of gradients of complicated functions tend to grow to massive length, rendering them intractably large to manage and evaluate.
+
+Closer examination of this expression swell reveals another interesting point, however: often, many of the subexpressions within the gradient equation are repeated. The reason for this is best shown by example: if we consider the product rule $\diff{[a(x) \cdot b(x)]}{x} = a'(x) b(x) + a(x) b'(x)$ and the fact that $a(x)$ and $a'(x)$ will naturally share many subexpressions, it follows that a symbolic derivative will tend to have many repeated subexpressions.
+
+As it turns out, we can alleviate the problem of expression swell entirely by re-using intermediate evaluations of subexpressions. In practice, this means relaxing the requirement that all steps of the derivative computation be "flattened" into a single, explicit representation. As a consequence, our gradient is no longer represented by an \textit{equation} that can be evaluated, but rather by a \textit{procedure} that can be followed in order to evaluate the gradient at a given point: our gradient is a \textit{code function} rather than a \textit{mathematical function}. This approach happens to be identical to "forward-mode automatic differentiation", which is covered in the following section.
+
+\subsubsection{Automatic Differentiation}
+
+Automatic differentiation (also known as \textit{autodiff}, AD, \textit{backpropagation}, or \textit{algorithmic differentiation}) is a method of computing derivatives that was pioneered in the machine learning (specifically, neural network) and optimal control communities.
+
+AD works by directly examining the source code of the function being differentiated. It exploits the fact that any computational function, no matter how complex, can be broken down into compositions of a small set of elementary\footnote{Paraphrasing Liouville, this includes arithmetic, trigonometric, power/logarithmic, and hyperbolic functions, along with inverses thereof.} functions. These functions can then be differentiated individually using known derivative rules and chained together using the chain rule.
+
+This decomposition of a function of interest into its individual operations leads to the idea of a \textit{computational graph}, which depicts the flow of information from through a function in code. This graph is also known as a \textit{trace} in some literature, which is an apt term as it allows one to trace a computer's path through a function. An example of such a graph is depicted in Figure \ref{fig:computational-graph}.
+
+\begin{figure}[H]
+    \centering
+%    \ifdraft{}{\input{}}
+    \centerline{\input{figures/computational-graph.tikz}}
+    \caption{A computational graph, as would be used for automatic differentiation.}
+    \label{fig:computational-graph}
+\end{figure}
+
+Computing a function value given inputs is straightforward using this computational graph; one supplies the known inputs and progressively works through the graph to produce an answer.
+
+Computing a derivative given inputs using this method is just as simple. To compute $\pdiff{f}{a}$ in the example of Figure \ref{fig:computational-graph}, one first evaluates derivative with respect to inputs: $\pdiff{a}{a}=1$, $\pdiff{b}{a}=0$, and so on. Then, each function is evaluated using its respective derivative rule (e.g. the product rule), and the result is $\pdiff{f}{a}$.
+
+The procedure just described is termed "forward-mode automatic differentiation", as the derivative is propagated \textit{forward} through the computational graph. Forward-mode AD computes the gradient of a function $\vec{f}(\vec{x}): \R^m \to \R^n$ in $\order(m)$ time complexity; that is, the cost is proportional to the number of function inputs.
+
+An alternative and far more powerful method is \textit{reverse-mode} automatic differentiation. Here, one computes a derivative by working \textit{backwards} through the computational graph. Because we are working backwards, this leads to some non-intuitive questions: for example, for each constituent function we must now ask "how do the inputs of this function change with respect to the output?". This is effectively a function-by-function adjoint approach, which are strung together via the computational graph to produce a derivative.
+
+The performance benefit that can be realized in exchange for the non-intuitive nature of reverse-mode AD is massive. Reverse-mode AD computes the gradient of a function $\vec{f}(\vec{x}): \R^m \to \R^n$ in $\order(n)$ time complexity; that is, the cost is proportional to the number of function \textit{outputs}. Specifically, Griewank proved that the cost of gradient computation is at most five times the cost of evaluating a scalar function, independent of the number of inputs \cite{griewank1997}.
+
+Reverse-mode AD is far more useful than forward-mode in practice, as most functions $\vec{f}(\vec{x}): \R^m \to \R^n$ of practical interest have $n \leq m$ (and often, $n=1$); that is, most engineering functions map from a high-dimensional space to a low-dimensional one. An example of this is in aerodynamic analysis, where a CFD run might have millions of inputs (e.g. mesh node locations) but only a few outputs of interest (e.g. net lift and drag). It makes intuitive sense that $n \leq m$ typically: optimization problems have many variables but generally just one objective. Furthermore, if this were not the case, the input space could not span the output space\footnote{barring functions like space-filling curves that do not typically appear in models of physics phenomena}, so the model would not yield any additional independent information\footnote{as measured by the number of independent degrees of freedom}.
+
+
+Automatic differentiation has several other key advantages over other gradient computation techniques. One of these is that the space of elementary functions is closed under differentiation; that is, the derivative of each function is exclusively a composition other (differentiable) elementary functions. Therefore, automatic differentiation allows one to compute arbitrarily high order derivatives (e.g. the Hessian, which is critical for optimization) using the same framework \cite{jax}.
+
+AD is also capable of following arbitrarily complex control flow like loops, conditional statements, object-oriented data structures, and recursion. This means that nearly any scientific analysis can be differentiated using AD, even in cases where a symbolic gradient would be nearly impossible to write.
+
+Reverse-mode automatic differentiation therefore represents a method to compute gradients of scalar functions to machine precision with $\order(1)$ complexity. This revolutionary improvement over other gradient methods enables efficient scaling to arbitrarily-large design optimization problems.
+
+Because of these reasons, automatic differentiation\footnote{primarily reverse-mode, but also forward-mode for certain computations} is the gradient computation method employed by AeroSandbox. This automatic differentiation is provided by CasADi, an open-source tool for automatic differentiation and nonlinear optimization developed by members of the optimal control community \cite{casadi}.
+
+% TODO \subsubsection{Implicit (Adjoint) Analytic Differentiation}
+%
+%Automatic differentiation is effectively an automatically-constructed discrete adjoint
+
+
+\section{Syntax and Mathematical Examples}
+
+In order to solve a problem with AeroSandbox, one first creates an empty optimization environment by instantiating this \opti\ class. After creating this class instance, one can declare variables, constraints, and parameters in arbitrary order. Upon calling the \mintinline{python}{Opti.solve()} method, these problem elements are automatically differentiated as-needed, constructed into a standard-form nonlinear program, solved via an interface to IPOPT, and returned to the user.
+
+Despite the sophisticated inner workings of AeroSandbox's \opti\ stack, an extensive effort has been made to abstract these details away from the user unless requested; sensible defaults and heuristics are used throughout AeroSandbox to make usage as easy as possible. For advanced users, it is useful to note that AeroSandbox's \opti\ class inherits and extends the corresponding \opti\ class from CasADi; more sophisticated optimization settings can be accessed directly through syntax shared with CasADi as needed.
+
+\subsection{Example: Constrained Rosenbrock Problem}
+
+Here, we illustrate the simplicity of the \opti\ stack by formulating the constrained Rosenbrock problem \cite{rosenbrock}, a common test problem for gradient-based optimization frameworks. The canonical version of the constrained Rosenbrock problem is as follows:
+
+\begin{mini}
+    |l|
+        {x, y}{(1-x)^2 + 100 (y - x^2)^2}
+        {}{}
+    \addConstraint{x^2 + y^2 \leq 1}
+    \label{eq:constrained-rosenbrock}
+\end{mini}
+
+The objective function landscape, as shown in Figure \ref{fig:constrained-rosenbrock}, is a shallow, curved valley that is constrained to the unit disk. A global minimum exists at $(x, y) \approx (0.7864, 0.6177)$; an analytical derivation of this is shown in Appendix \ref{sect:rosen-derivation}.
+
+\begin{figure}[H]
+    \centering
+    \ifdraft{}{\input{figures/constrained-rosen.pgf}}
+    \caption{Constrained Rosenbrock Function}
+    \label{fig:constrained-rosenbrock}
+\end{figure}
+
+This problem is a particularly useful example in the context of engineering design optimization, as it has many mathematical qualities which tend to be relevant in engineering problems. Specifically, both the Rosenbrock problem in Eq. \ref{eq:constrained-rosenbrock} and many engineering problems are:
+
+\begin{enumerate}
+    \item \textbf{Continuous}: Design variables are not constrained to be integer, drawn from an enumeration, or otherwise discrete.
+    \item \textbf{Constrained}: Constraints, typically given by physics or requirements, limit the allowable design space.
+    \item \textbf{Nonlinear}: Both the objective function and all constraints are, in general, nonlinear functions of design variables.
+    \item \textbf{Nonconvex}: The objective function and constraints are not necessarily convex functions of the design variables. In formal terms, the these functions need not satisfy the convex inequality; in informal terms, we effectively make no restrictions on the curvature of these functions. In the case of the Rosenbrock problem, the point $(0, 1)$ is locally nonconvex, with objective Hessian eigenvalues (principal curvatures) of $200$ and $-398$.
+    \item \textbf{Unimodal}: Allowing nonconvex objective functions admits multimodal\footnote{Definition: having more than one local optima} problems, which raises the concern of global optimality. However, in practice, enough nonconvex aerospace engineering problems are indeed unimodal that current best practices are to assume unimodality until proven otherwise \cite[p. 212]{mdobook}. Indeed, the Rosenbrock problem is unimodal despite its nonconvexity.
+    \item \textbf{Poorly-scaled}: At regions of interest in the design space (e.g. initial guess, optimal solution, intermediate points), the Hessian matrix of the Lagrangian (or here, the objective) has a large condition number. In the case of the constrained Rosenbrock problem, $\text{cond}(H)\approx 1054$ at the optimum.
+
+    Poor scaling typically occurs in engineering problems because of differences in orders of magnitude and units between quantities of interest. For example, a wing skin thickness might measure one millimeter, while mission range could be on the order of hundreds of kilometers. Simple linear problem scaling (discussed later% TODO insert where
+    ) can alleviate this issue to some degree, but it is practically impossible to entirely eliminate scale differences given \textit{a priori} problem knowledge. Furthermore, because the key metric for solver performance here is the Hessian condition number, relying on this approach alone requires an engineer to accurately estimate the \textit{curvature} of the performance function - a markedly more difficult task than simply guessing the scale of a quantity.\footnote{This technique also requires domain-specific expert knowledge, which may not be available. Thus, an optimizer that gracefully handles poorly-scaled problems is always desirable.}
+
+\end{enumerate}
+
+The Rosenbrock problem can be solved in AeroSandbox using the simple Python syntax in Listing \ref{listing:constrained-rosen}.
+
+\begin{listing}[H]
+    \begin{minted}{python}
+def rosenbrock(x, y):
+    return (1 - x) ** 2 + 100 * (y - x ** 2) ** 2
+
+import aerosandbox as asb  # Import the AeroSandbox library.
+
+opti = asb.Opti()  # Create a new optimization environment.
+
+x = opti.variable(init_guess=4)  # Define optimization variables.
+y = opti.variable(init_guess=4)
+
+opti.subject_to(x ** 2 + y ** 2 <= 1)  # Define a constraint.
+
+opti.minimize(rosenbrock(x, y))  # Define an objective.
+
+sol = opti.solve()  # Solve the problem.
+
+x_opt, y_opt = sol.value(x), sol.value(y)  # Extract the solution.
+print(x_opt, y_opt)  # Display the solution.
+    \end{minted}
+    \caption{AeroSandbox solution of the constrained Rosenbrock problem.}
+    \label{listing:constrained-rosen}
+\end{listing}
+
+Initializing from a guess of $(x, y) = (4, 4)$, this code retrieves the correct solution for the optimum of $(x, y) = (0.7864, 0.6177)$ after 9 iterations.
+
+A point of particular note here is that our initial guess of $(x, y) = (4, 4)$ lies outside the feasible design space. Unlike some interior-point optimization algorithms, IPOPT does not require a feasible initial guess. This is a particularly important feature in aircraft design, where the high number of cross-discipline constraints often makes \textit{a priori} identification of a feasible point laborious.
+
+\subsection{Example: 5,000-Dimensional Rosenbrock Problem}
+
+In the previous example, we solved the constrained Rosenbrock problem. This was a 2-dimensional problem, so we individually created two variables: $x$ and $y$.
+
+For high-dimensional problems, it is both more concise and more computationally-efficient to vectorize variables. A vector of variables is a powerful construct, as it allows vector and matrix operations to be used with identical notation to a standard mathematical optimization formulation.
+
+This can be demonstrated by finding the minimum of the $n$-dimensional Rosenbrock problem, as given by Virtanen et al. \cite{scipy}:
+
+\begin{mini}
+    |l|
+        {\vec{x}}{\sum_{i=1}^{n-1} 100(x_{i+1}-x_i^2)^2 + (1 - x_i) ^2}
+        {}{}
+%    \addConstraint{}
+    \label{eq:nd-rosenbrock}
+\end{mini}
+
+For any $n$ except $4 \leq n \leq 7$, this function is unimodal \cite{kok}. Here, we take $n=5000$ in order to demonstrate the scalability of automatic differentiation (as described in Sect. \ref{sect:ad}) and variable vectorization. This results in a minimum at $\vec{x} = [1, 1, \dots, 1]$, corresponding to a function value of $0$.
+
+This problem can be coded in AeroSandbox as shown in Listing \ref{listing:nd-rosen}.
+
+\begin{listing}[H]
+    \begin{minted}[mathescape=true]{python}
+import aerosandbox as asb
+import aerosandbox.numpy as np
+
+N = 5000
+
+opti = asb.Opti()  # Create an optimization environment.
+
+x = opti.variable(init_guess=4 * np.ones(shape=N))  # Create a vectorized variable $x$.
+
+x1 = x[:-1]  #  Effectively $x_i$
+x2 = x[1:]   #  Effectively $x_{i+1}$
+
+f = np.sum(100 * (x2 - x1 ** 2) ** 2 + (1 - x1) ** 2)
+
+opti.minimize(f)  # Define an objective.
+
+sol = opti.solve()  # Solve the problem.
+
+x_opt = sol.value(x)  # Extract the solution.
+    \end{minted}
+    \caption{AeroSandbox solution of the 5,000-dimensional Rosenbrock problem.}
+    \label{listing:nd-rosen}
+\end{listing}
+
+The correct solution of $\vec{x} = [1, 1, \dots 1]$ is found after just 25 iterations. Querying this solution further, we find that our objective function was evaluated 49 times\footnote{More than one function evaluation may occur per iteration as a result of the line search that occurs at each iteration.}. It is instructive to consider that we have effectively found the zero of the $5000$-dimensional function $\pdiff{f}{\vec{x}}$ with only 49 function evaluations, a feat that initially seems to violate some arcane principle of information theory. This apparent paradox is resolved by noticing that the gradient evaluation via reverse-mode automatic differentiation contributes $5000$ pieces of information for each pass through the computational graph. This empirically demonstrates why efficient gradient computation is the key to fast optimization: each pass through the computational graph gives us orders of magnitude more useful information than a single function evaluation.
+
+We make particular note of the \textit{speed} of solving this problem, recalling that the problem is a nonlinear, nonconvex optimization problem of $5000$ variables. Despite this, on a single workstation laptop\footnote{Intel i7-8750H CPU, Windows 10}, AeroSandbox solves this problem in just 0.284 seconds.
+
+We can quantify this scaling by solving this same $n$-dimensional problem for various $n$, as shown in Figure \ref{fig:nd-rosen}. We notice here that the asymptotic time complexity is (empirically) roughly $\order(n^{0.9})$, indicating sublinear scaling with respect to dimensionality. We can identify several factors that contribute to the sublinear scaling curve seen in Figure \ref{fig:nd-rosen}:
+
+\begin{itemize}
+    \item The cost of a single objective function evaluation scales as $\order(n)$ due to the length of the vectors being operated on.
+    \item The cost of a single gradient evaluation is proportional to the cost of a function evaluation regardless of $n$, thanks to reverse-mode automatic differentiation. This means that gradient evaluation is also $\order(n)$. (With a finite-difference method, this would be $\order(n^2)$.)
+    \item The number of iterations required for convergence is roughly independent of the problem dimensionality.
+    \item A small overhead cost (here, $\approx 14$ milliseconds) is associated with interfacing with IPOPT. For repeated optimization runs (as in the case of a parametric design study), this cost can be eliminated as described in Section \ref{sect:sweep}. % TODO make link to sweep section
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+%    \ifdraft{}{\includegraphics{}}
+    \ifdraft{}{\input{figures/nd-rosen.pgf}}
+    \caption{N-Dimensional Rosenbrock Performance. }
+    \label{fig:nd-rosen}
+\end{figure}
+
+
+\section{Simple Aircraft Design Examples}
+
+In order to demonstrate that this high-performance optimization framework is not limited to mathematical examples, we present several aircraft design test problems. These also serve as examples to benchmark against other comparable frameworks.
+
+\subsection{Example: Simple Wing}
+\label{sect:simple-wing}
+
+A common aerospace design problem is wing drag minimization. Here, we implement one such problem in AeroSandbox and demonstrate its solution.
+
+The problem at hand is identical to the one specified in Section III of Hoburg and Abbeel \cite{hoburg}, with a few constants tweaked to match the formulation in \cite{kirschen}, \cite{Ozturk2018}, and other related works. It is restated here in its natural engineering syntax:
+
+\begin{example}
+    \textbf{Simple Wing}
+    \begin{mini}
+        |l|
+            {\AR, S, V, W, C_L}{D}
+            {}{}
+        \addConstraint{W \leq L_\text{cruise}}
+        \addConstraint{W \leq L_\text{takeoff}}
+        \addConstraint{W = W_\text{fuselage} + W_\text{wing}}
+        \label{eq:simple-wing}
+    \end{mini}
+    \begin{eqexpl}
+        \item{$D$} Cruise drag
+        \item{$\AR$} Wing aspect ratio (here, the wing is assumed to be rectangular)
+        \item{$S$} Wing area
+        \item{$V$} Cruise airspeed
+        \item{$W$} Total weight
+        \item{$C_L$} Cruise lift coefficient
+    \end{eqexpl}
+
+    \noindent
+    We are also given the following physics models:
+
+    \begin{itemize}[noitemsep]
+        \item The chord $c = \sqrt{S / \AR}$, from geometric relations.
+        \item The drag $D = \frac{1}{2} \rho V^2 C_D S$
+        \item The drag coefficient $C_D = \frac{\mathrm{CDA}_0}{S} + k C_f \frac{S_\text{wet}}{S} + \frac{C_L^2}{\pi \AR e}$
+        \begin{itemize}[noitemsep]
+            \item $C_f = 0.074 \cdot \text{Re}^{-0.2}$, the Schlichting turbulent flat plate boundary layer model
+            \item $\text{Re} = \frac{\rho V c}{\mu}$
+        \end{itemize}
+        \item The cruise lift $L_\text{cruise}=\frac{1}{2}\rho V^2 C_L S$
+        \item The takeoff lift $L_\text{takeoff}=\frac{1}{2}\rho V_\text{min}^2 C_{L, \text{max}} S$
+        \item The wing weight $W_{\text{wing}}= W_\text{w, structural} + W_\text{w, surface}$
+        \begin{itemize}[noitemsep]
+            \item $W_\mathrm{w,\ structural} = W_\text{w, c1} \cdot \frac{N \AR^{1.5} \sqrt{W_0 W S}}{\tau}$
+            \item $W_\mathrm{w,\ surface} = W_\text{w, c2} \cdot S$
+        \end{itemize}
+    \end{itemize}
+
+    \begin{eqexpl}
+        \item{$k$} $1.2$, the form factor.
+        \item{$e$} $0.95$, the Oswald efficiency factor.
+        \item{$\mu$} $1.78 \times 10^{-5}$ \si{\kg\per\meter\per\second}, the sea-level dynamic viscosity of air.
+        \item{$\rho$} $1.23$ \si{\kg/\meter\cubed}, the sea-level density of air.
+        \item{$\tau$} $0.12$, the airfoil thickness-to-chord ratio.
+        \item{$N$} $3.8$, the ultimate load factor.
+        \item{$V_\text{min}$} $22$ \si{\meter/\second}, the takeoff airspeed.
+        \item{$C_{L, \text{max}}$} $1.5$, the takeoff lift coefficient.
+        \item{$S_\text{wet}/S$} $2.05$, the wetted area ratio.
+        \item{$\text{CDA}_0$} $0.031$ \si{\meter\squared}, the fuselage drag area.
+        \item{$W_0$} $4940$ \si{\newton}, the aircraft weight excluding the wing.
+        \item{$W_\text{w, c1}$} $8.71 \times 10^{-5}$ \si{\per\meter}, a coefficient used to calculate wing weight.
+        \item{$W_\text{w, c2}$} $45.24$ \si{\Pa}, another wing weight coefficient.
+    \end{eqexpl}
+\end{example}
+
+This problem can be solved in AeroSandbox using the code shown in Appendix \ref{sect:simple-wing-code}. AeroSandbox requires initial guesses, which are chosen as rounded order-of-magnitude estimates following Kirschen \cite{kirschen}\footnote{Specific figures for initial guesses can be viewed in the code in Appendix \ref{sect:simple-wing-code}.}. Solution via the code in Appendix \ref{sect:simple-wing-code} produces the following result, which is identical to that found in \cite{hoburg}:
+
+\begin{table}[H]
+    \centering
+    \caption{Solution of Simple Wing (Eq. \ref{eq:simple-wing}), found with AeroSandbox.}
+    \label{tab:simple-wing}
+    \begin{tabular}[t]{ll}
+        \toprule
+        Figure of Merit        & Optimal Value             \\
+        \midrule
+        Minimum drag $D$       & 303.07 \si{\newton}       \\
+        Aspect ratio $\AR$     & 8.46                      \\
+        Wing area $S$          & 16.44 \si{\meter\squared} \\
+        Airspeed $V$           & 38.15 \si{\meter/\second} \\
+        Weight $W$             & 7341 \si{\newton}         \\
+        Lift Coefficient $C_L$ & 0.4988                    \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+This problem, which consists of 5 design variables and 3 constraints, is solved predictably quickly from our initial guess in just 11 milliseconds and 25 iterations. Comparison with solves in \cite{Ozturk2018} and \cite{kirschen} confirms that this is the global optimum; this can also be proven analytically.
+
+\subsubsection{On Initial Guesses and Solver Robustness}
+
+A common concern for any optimizer when working with practical problems is its robustness to bad initial guesses. The optimization algorithms in AeroSandbox are much more robust to poor initial guesses than other nonlinear program (NLP) optimizers.
+
+For example, Kirschen and Hoburg found that various general NLP solvers performed exceptionally poorly on this same Simple Wing problem \cite{kirschen}. Kirschen gave this problem with the exact same initial guess to commercial interior-point and SQP optimizers built into MATLAB's \texttt{fmincon()} solver. Neither optimizer was able to successfully converge to the solution, while AeroSandbox was; a comparison is presented in Table \ref{tab:nlp-compare}. In addition, the numbers from Kirschen in Table \ref{tab:nlp-compare} correspond to IP and SQP runs with exact analytical gradients\footnote{Runs in Kirschen \cite{kirschen} without exact analytical gradients, i.e. finite-difference gradients, perform even worse.}, so the stark performance difference between these methods and AeroSandbox is purely due to differences in optimization algorithms, not gradient quality.
+
+In Table \ref{tab:nlp-compare}, we also benchmark AeroSandbox against GPKit, a specialized framework for solving geometric programs such as Simple Wing. GPKit is benchmarked here with its open-source \texttt{cvxopt} backend in order to facilitate a fair "open-source vs. open-source" comparison. Despite the fact that GPKit is a specialized tool for this particular class of problem, the general-purpose AeroSandbox solver consistently achieves convergence faster on the same hardware.
+
+\begin{table}[H]
+    \begin{center}
+        \caption{Comparison of optimization methods: Simple Wing problem with same initial guesses.}
+        \label{tab:nlp-compare}
+
+        \begin{tabularx}{\textwidth}{lXclX}
+            \toprule
+            \multirow{2}{*}{Optimizer} & \multicolumn{2}{c}{Optimality} & \multicolumn{2}{c}{Speed} \\
+            \cmidrule(r){2-3}\cmidrule(r){4-5} & Drag (Objective) & Optimal? & Runtime
+            & Func. Evals.
+            \\
+            \midrule
+            IP, Kirschen \cite{kirschen} & 593.76 \si{\newton} & & 37.7 \si{\second} $^a$
+            & 10,530
+            \\
+            SQP, Kirschen \cite{kirschen} & 438.66 \si{\newton} & & 0.1 \si{\second} $^a$
+            & 83
+            \\
+            GPKit       & 303.07 \si{\newton} & \checkmark & 0.026 \si{\second} $^b$ & -  \\
+            AeroSandbox & 303.07 \si{\newton} & \checkmark & 0.022 \si{\second} $^b$ & 29 \\
+            \bottomrule
+        \end{tabularx}
+    \end{center}
+    \footnotesize{$^a$ Tested by Kirschen \cite{kirschen} on unspecified hardware.}\\
+    \footnotesize{$^b$ Both tested on an Intel i7-8750H CPU Windows 10 laptop; median over 10 runs.}\\
+    \footnotesize{Runtime comparisons should be made within groups $^a$ and $^b$, not across them.}
+\end{table}
+
+We can demonstrate the robustness of AeroSandbox further by modifying the initial guesses to more extreme values. Here, we arbitrarily select the airspeed $V$, which is nominally initialized to a value of $100$ \si{\meter/\second}. We can change this initial guess by two orders of magnitude in either direction (to $1$ \si{\meter/\second} and $10,000$ \si{\meter/\second}); in both cases, the problem still solves to optimality in 32 iterations or less, and runtime is essentially unaffected.
+
+Although this robustness is obviously problem-dependent in a rigorous sense, in practice we find that this robustness to initial guesses holds consistently. As long as variables are initialized to approximately within two orders of magnitude in either direction of their optimal value, convergence is likely. Guessing a value within this 4-order-of-magnitude window is generally trivial based on engineering intuition.
+
+This extreme robustness is observed in part due to the robustness of the IPOPT algorithm - in particular its line search and restoration phases. This robustness is also due to a series of heuristic problem transformations that are carried out automatically in AeroSandbox; these are detailed further in Section \ref{sect:problem-transformations}.
+
+\subsection{Problem Transformations}
+\label{sect:problem-transformations}
+
+A variety of heuristic problem transformations are automatically performed by AeroSandbox in an attempt to make problems more amenable to a general-purpose NLP solver. These heuristic transformations can dramatically improve solver performance and can also be manually specified by advanced users. Here, we discuss a few of these heuristics.
+
+\subsubsection{Problem Scaling}
+
+When formulating optimization problems to be passed to NLP solvers, it is critical to scale design variables so that the problem is \textit{well-scaled}. Here, "scaling" means that a variable is multiplied or divided by some constant before it is passed into the optimizer, so that the optimizer sees a value that is ideally on the order of $10^{-2}$ to $10^2$.
+
+The primary step of the IPOPT solver within AeroSandbox is a quasi-Newton line-search direction calculation, which is theoretically scale-invariant. However, due to floating-point arithmetic precision limits, scaling can significantly affect conditioning of the Lagrangian Hessian and constraints Jacobian matrices. Furthermore, IPOPT's interior-point barrier algorithm is not scale-invariant, so scaling is critical on constrained problems (which represent the vast majority of cases).
+
+The issue of scaling is especially important in engineering design optimization, where problems frequently have variables that span many orders of magnitude if left unscaled. For example, a composite skin thickness might be on the order of $10^{-3}$ \si{\meter}, while an internal stress might be on the order of $10^{8}$ \si{\Pa}.
+
+In AeroSandbox, the scale factor for a given variable can be easily set at initialization using the following inline syntax:
+
+\begin{minted}{python}
+import aerosandbox as asb
+
+opti = asb.Opti()
+x = opti.variable(init_guess = 5, scale = 10)
+\end{minted}
+
+Similarly, the scale of vector variables can be set with either a constant or a vector of equal length (in which case scales are applied element-wise). Because scaling is so critically important, AeroSandbox will automatically scale all variables using heuristics based on the initial guess.
+
+We can illustrate the importance of appropriate problem scaling and some of AeroSandbox's heuristics by example. Here, we recreate a NLP scaling example problem originally formulated by Durbin and the CasADi team \cite{durbin}. Durbin et al. used this example to illustrate the importance of scaling, although in their study, scales were manually specified. Here, we recreate this study but perform all scaling using AeroSandbox's automatic heuristics. The problem is formulated as follows:
+
+\begin{example}
+    \textbf{Rocket Optimal Control} (formulated by Durbin et al. \cite{durbin})
+
+    \noindent
+    A rocket launches from the ground at time $t=0$ and must reach an altitude $y = 100$ \si{\km} at time $t = 100$ \si{\second}. Dynamics are treated as 1D. We seek the trajectory that minimizes fuel use (or equivalently, maximizes final rocket mass, as the initial mass is constrained). A control vector $u(t)$ that specifies the thrust profile is optimized.
+
+    \begin{mini}
+        |l|
+            {y(t), \dot{y}(t), m(t), u(t)}{-m_\text{final}}
+            {}{}
+        \addConstraint{\diff{y}{t} = \dot{y}}
+        \addConstraint{\diff{\dot{y}}{t} = u / m - (9.81\ \si{m/s^2})}
+        \addConstraint{\diff{m}{t} = \frac{-u}{(300\ \si{sec}) \cdot (9.81\ \si{m/s^2})}}
+        \addConstraint{y(0) = 0}
+        \addConstraint{\dot{y}(0) = 0}
+        \addConstraint{m(0) = 500 \times 10^3\ \si{\kg}}
+        \addConstraint{y_\text{final} = 100 \times 10^3\ \si{\meter}}
+        \addConstraint{m > 0, u \geq 0, y \geq 0}
+        \label{eq:rocket-optimal-control}
+    \end{mini}
+
+\end{example}
+
+For example purposes and following \cite{durbin}, we transcribe this problem using direct collocation with forward-Euler integration across 100 points uniformly spaced in time, a technique described further in Section \ref{sect:integrators}. The optimal trajectory after solution is given in Figure \ref{fig:rocket-trajectory}.
+
+\begin{figure}[H]
+    \centering
+%    \ifdraft{}{\includegraphics{}}
+    \ifdraft{}{\input{figures/rocket-trajectory.pgf}}
+    \caption{Optimal trajectory of the Rocket Optimal Control problem (Eq. \ref{eq:rocket-optimal-control}), found with AeroSandbox.}
+    \label{fig:rocket-trajectory}
+\end{figure}
+
+We now examine the effect of scaling on the optimizer performance when solving this problem. We solve this problem once with scaling heuristics disabled\footnote{Implemented by passing \mintinline{python}{scale=1} at variable initialization.} and a second time with scaling heuristics enabled\footnote{Enabled by default.}. In both cases, we provide initial guesses based on a bit of first-order kinematics intuition from the problem description:
+
+\begin{equation*}
+    \begin{aligned}
+        y_\text{guess}(t) &= \frac{100 \times 10^3\ \si{\meter}}{100\ \si{\second}} \cdot t\\
+        \dot{y}_\text{guess}(t) &= \frac{100 \times 10^3\ \si{\meter}}{100\ \si{\second}}\\
+        m_\text{guess}(t) &= 500 \times 10^3\ \si{\kg}\\
+        u_\text{guess}(t) &= (9.81\ \si{m/s^2}) \times (500 \times 10^3\ \si{\kg})
+    \end{aligned}
+\end{equation*}
+
+Although both the unscaled and scaled runs eventually solve the problem, the difference in solution speed is dramatic; this is illustrated in Figure \ref{fig:rocket-convergence}. The solution with scaling heuristics is clearly much more stable, and convergence is achieved in 14 rather than 85 iterations.
+
+\begin{figure}[H]
+    \centering
+%    \ifdraft{}{\includegraphics{}}
+    \centerline{\ifdraft{}{\input{figures/rocket-convergence.pgf}}}
+    \caption{Convergence of the Rocket Optimal Control problem (Eq. \ref{eq:rocket-optimal-control}), depending on scaling.}
+    \label{fig:rocket-convergence}
+\end{figure}
+
+A stark difference is also seen in terms of wall-clock time to solve, as presented in Table \ref{tab:scaling-compare}; the auto-scaling heuristic results in an 8x speedup.
+
+\begin{table}[H]
+    \begin{center}
+        \caption{Effect of auto-scaling on Rocket Optimal Control problem runtime.}
+        \label{tab:scaling-compare}
+
+        \begin{tabular}[t]{ll}
+            \toprule
+            Run Type             & Runtime$^a$        \\
+            \midrule
+            Without auto-scaling & 0.320 \si{\second} \\
+            With auto-scaling    & 0.038 \si{\second} \\
+            \bottomrule
+        \end{tabular}
+    \end{center}
+    \footnotesize{$^a$ Both tested on an Intel i7-8750H CPU Windows 10 laptop; median over 10 runs.}\\
+\end{table}
+
+\subsubsection{Log-Transformation}
+
+Another transformation that can be easily employed in AeroSandbox is log-transformation. Log-transformation is the process of applying a logarithm to a variable before passing it to the optimizer, such that the algorithm optimizes the quantity $\ln(x)$ rather than $x$. (The same can also be done to constraints and objectives.)
+
+Log-transformation for engineering design optimization was extensively studied by Boyd \cite{cvxbook}, with subsequent applications by Hoburg \cite{hoburg}, Ozturk \cite{Ozturk2018}, Kirschen \cite{kirschen}, and many others. The mathematical rationale behind log-transformation is that certain types of expressions\footnote{Known as \textit{monomial} and \textit{posynomial} expressions, as defined in \cite{hoburg}} that sometimes appear in engineering problems can be guaranteed to become convex under log-transformation. This approach, when taken to the extreme, results in \textit{geometric programming} (GP); a broad comparison of GP with AeroSandbox's more general approach is given in Section \ref{sect:compare}.
+
+In the context of a general NLP framework like AeroSandbox, the usefulness of log-transformation can vary widely problem-to-problem. Here, we make some general observations about the pros and cons of this technique:
+
+\begin{itemize}
+    \item Pros:
+    \begin{itemize}
+        \item Many engineering expressions become convex or more-convex when log-transformed, which can lead to faster, more stable solutions.
+        \item Many scaling issues disappear under log-transformation, as many orders of magnitude can be spanned with relatively little change in the underlying log-transformed variable.
+        \item We more faithfully represent our design intent. Performance often most intuitively considered multiplicatively, not additively. For example, in aircraft design, a 10\% drag decrease is significant no matter the scale; however, the significance of a 10 \si{\newton} drag decrease is entirely dependent on aircraft scale. In other words, log-transformation effectively nondimensionalizes a design variable, as the log-transformed quantity is unitless.
+        \item For quantities that would otherwise need to be constrained to be positive (e.g. vehicle mass), we can eliminate one constraint: the constrained problem has been transformed into an unconstrained one.
+    \end{itemize}
+    \item Cons:
+    \begin{itemize}
+        \item In some cases, log-transformation can transform an engineering expression from a convex one into a nonconvex one. Therefore, the benefit of log-transformation is highly case-dependent.
+        \item Log-transformation is yet another nonlinearity, which can make the problem more difficult to solve. In particular, the affine constraints that appear often in engineering design become nonlinear (and sometimes nonconvex) under log-transformation, leading to much worse performance. In practice, this performance loss from nonlinearity becomes quite significant for high-dimensional problems.
+        \item If the optimal value of a variable is ever zero or negative (e.g. thrust in the Rocket Optimal Control example of Eq. \ref{eq:rocket-optimal-control}), convergence on the log-transformed problem is not possible. (The problem becomes unbounded.)
+    \end{itemize}
+\end{itemize}
+
+Because of all these reasons, we generally find that it is best to start modeling a design problem without log-transformations, and to only add them in later if the problem physics justify it. In AeroSandbox, this can be done by passing the \mintinline{python}{log_transform=True} argument at variable declaration.
+
+\subsection{Example: Simple Aircraft (SimpleAC)}
+\label{sect:simpleac}
+
+Now armed with more understanding of the problem transformations available in AeroSandbox, we can also demonstrate performance on a more sophisticated aircraft design problem. This problem, known as \textit{SimpleAC}, models a simple aircraft by extending the Simple Wing problem in Section \ref{sect:simple-wing} with fuel weight and volume models. It was proposed by Hoburg in \cite{hoburg} and is reproduced by both Ozturk \cite{Ozturk2018} and Kirschen \cite{kirschen}. It is restated here in full form:
+
+\begin{example}
+    \textbf{Simple Airplane (SimpleAC)}
+    \begin{mini}
+        |l|
+            {\AR, S, V, W, C_L, W_f, V_\text{f, fuse}}{W_f}
+            {}{}
+        \addConstraint{W \geq W_0 + W_w + W_f}
+        \addConstraint{W_0 + W_w + \frac{1}{2} W_f \leq L_\text{cruise}}
+        \addConstraint{W \leq L_\text{takeoff}}
+        \addConstraint{W_f \geq \text{TSFC} \cdot t_\text{flight} \cdot D}
+        \addConstraint{V_\text{f, wing} + V_\text{f, fuse} \geq V_f}
+        \label{eq:simpleac}
+    \end{mini}
+    \begin{eqexpl}
+        \item{$\AR$} Wing aspect ratio (here, the wing is assumed to be rectangular)
+        \item{$S$} Wing area
+        \item{$V$} Cruise airspeed
+        \item{$W$} Total weight
+        \item{$C_L$} Cruise lift coefficient
+        \item{$W_f$} Fuel weight
+        \item{$V_\text{f, fuse}$} Volume of fuel in fuselage
+    \end{eqexpl}
+
+    \noindent
+    All of the physics models from Simple Wing (Eq. \ref{eq:simple-wing}) apply, and we are also given the following new physics models:
+
+    \begin{itemize}[noitemsep]
+        \item The flight time $t_\text{flight} = \text{Range} / V$
+        \item The fuselage drag area is no longer constant, instead scaling with fuel volume as $\text{CDA}_0 = V_\text{f, fuse} / (10\ \si{\meter})$
+        \item The total fuel volume $V_f = \frac{W_f}{g\rho_f}$
+        \item The fuel volume in the wing $V_\text{f, wing} = 0.03 S^{1.5} \AR^{-0.5} \tau$
+    \end{itemize}
+
+    \noindent
+    Constants are identical to Simple Wing (Eq. \ref{eq:simple-wing}), except for the following redefined ones:
+
+    \begin{itemize}[noitemsep]
+        \item $k=1.17$, the form factor.
+        \item $e = 0.92$, the Oswald efficiency factor.
+        \item $\mu = 1.775 \times 10^{-5}$ \si{\kg\per\meter\per\second}, the sea-level dynamic viscosity of air.
+        \item $N = 3.3$, the ultimate load factor.
+        \item $V_\text{min} = 25$ \si{\meter/\second}, the takeoff airspeed.
+        \item $C_{L, \text{max}} = 1.6$, the takeoff lift coefficient.
+        \item $S_\text{wet}/S = 2.075$, the wetted area ratio.
+        \item $W_0 = 6250$ \si{\newton}, the aircraft weight excluding the wing and fuel.
+        \item $W_\text{w, c1} = 2 \times 10^{-5}$ \si{\per\meter}, a wing weight coefficient.
+        \item $W_\text{w, c2} = 60$ \si{\Pa}, another wing weight coefficient.
+    \end{itemize}
+
+    \noindent
+    The following new constants are added:
+
+    \begin{itemize}[noitemsep]
+        \item $g = 9.81$ \si{\meter/\second\squared}, Earth gravity.
+        \item $\rho_f = 817$ \si{\kg/\meter\cubed}, the density of fuel.
+        \item $\text{Range} = 1000$ \si{\kilo\meter}, the aircraft mission range.
+        \item $\text{TSFC} = 0.6\ \si{\per\hour} = 1.67 \times 10^{-4}\ \si{\per\second}$, the thrust-specific fuel consumption.
+    \end{itemize}
+
+\end{example}
+
+SimpleAC clearly borrows many models from Simple Wing, although it has a different optimization objective: instead of minimizing drag, here we minimize fuel burn for a fixed mission range. Intuitively, we expect this to drive the optimizer to faster designs, and this is what is observed.
+
+This problem is solved in AeroSandbox, employing log-transformation on all variables, as discussed in Section \ref{sect:problem-transformations}. Code to solve this problem is available in Appendix \ref{sect:simpleac-code}. This converges to a solution in 23 milliseconds and 14 iterations. The results of this AeroSandbox solve are shown in Table \ref{tab:simpleac}.
+
+\begin{table}[H]
+    \centering
+    \caption{Solution of SimpleAC (Eq. \ref{eq:simpleac}), found with AeroSandbox.}
+    \label{tab:simpleac}
+    \begin{tabular}[t]{ll}
+        \toprule
+        Figure of Merit                            & Optimal Value             \\
+        \midrule
+        Fuel weight $W_f$                          & 937.8 \si{\newton}        \\
+        Aspect ratio $\AR$                         & 12.10                     \\
+        Wing area $S$                              & 14.15 \si{\meter\squared} \\
+        Cruise airspeed $V$                        & 57.11 \si{\meter/\second} \\
+        All-up weight $W$                          & 8705 \si{\newton}         \\
+        Cruise lift coefficient $C_L$              & 0.2901                    \\
+        Fuel volume in fuselage $V_\text{f, fuse}$ & 0.0619 \si{\meter\cubed}  \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+We can once again benchmark performance against GPKit, the optimization library that SimpleAC is derived from. This comparison is shown in Table \ref{tab:nlp-compare-simpleac}. Here, AeroSandbox solves the same engineering design optimization problem approximately six times faster than GPKit.
+
+\begin{table}[H]
+    \begin{center}
+        \caption{Comparison of optimization methods: SimpleAC problem.}
+
+        \label{tab:nlp-compare-simpleac}
+        \begin{tabularx}{\textwidth}{lXclX}
+            \toprule
+            \multirow{2}{*}{Optimizer} & \multicolumn{2}{c}{Optimality} & \multicolumn{2}{c}{Speed} \\
+            \cmidrule(r){2-3}\cmidrule(r){4-5} & $W_f$ (Objective) & Optimal? & Runtime
+            & Func. Evals.
+            \\
+            \midrule
+            GPKit       & 937.8 \si{\newton} & \checkmark & 0.141 \si{\second} & 2 (GP iters.) \\
+            AeroSandbox & 937.8 \si{\newton} & \checkmark & 0.023 \si{\second} & 16            \\
+            \bottomrule
+        \end{tabularx}
+    \end{center}
+    \footnotesize{Both tested on an Intel i7-8750H CPU Windows 10 laptop; median over 10 runs.} \\
+\end{table}
+
+
+\section{Numerics Stack}
+
+One of the primary reasons for AeroSandbox's speed is its use of end-to-end automatic differentiation, as described in Section \ref{sect:ad}. In order for automatic differentiation to work, we need to be able to make a computational graph that contains each mathematical operation that is applied throughout our optimization formulation.
+
+This means that a standard Python numerics library such as NumPy cannot be directly used, because some of these functions break the computational graph - they are not \textit{differentiable}, in a code sense.
+
+Instead, we require a custom differentiable numerics library. Learning a custom numerics library sounds like a daunting task for the end user at first, and in other frameworks, it can be: consider that the two major modern machine learning libraries, PyTorch and TensorFlow, each include custom submodules for differentiable numerics. Both of these submodules use package-specific syntax; in effect, they are a new programming language within a programming language.
+
+AeroSandbox takes a different approach that attempts to make using this numerics library as seamless as possible. AeroSandbox does not introduce new package-specific syntax for its numerics library. Instead, AeroSandbox deliberately overloads syntax from the ubiquitous NumPy package, which has syntax that is already second-nature to any user who performs scientific computing in Python\footnote{This practice of extending NumPy is inspired by similar approaches in the Google JAX \cite{jax} and \texttt{autograd} packages.} \cite{numpy}. Thus, the AeroSandbox numerics library can be imported using a drop-in replacement for the standard NumPy import, as shown in Figure \ref{fig:asb-np-import}.
+
+\begin{figure}[H]
+    \centering
+    \input{figures/asb-np-import.tikz}
+    \caption{Standard import of the AeroSandbox numerics stack.}
+    \label{fig:asb-np-import}
+\end{figure}
+
+The \texttt{aerosandbox.numpy} numerics stack is a superset of NumPy, so any function contained in the normal NumPy library can be used for general-purpose computing.
+
+The AeroSandbox numerics stack works by stitching together the (non-differentiable) NumPy package with the (automatic-differentiable) CasADi numerics library, intelligently switching between the two libraries as-needed based on input data types. NumPy is a very large package, and not every NumPy function has been given automatic differentiation support. However, the list of supported differentiable functions is quite extensive, including:
+
+\begin{example}
+    \noindent
+    \textbf{Differentiable Functions using NumPy-like Syntax in the AeroSandbox Numerics Stack}
+
+    \begin{itemize}[noitemsep]
+        \item 1D and 2D array operations (initialization, indexing, concatenation, reshaping, etc.)
+        \begin{itemize}[noitemsep]
+            \item Higher-dimensional array operations, in the slower "object" mode.
+        \end{itemize}
+        \item Elementary operators
+        \begin{itemize}[noitemsep]
+            \item Arithmetic
+            \item Trigonometry (including inverse, hyperbolic, and inverse hyperbolic functions)
+            \item Powers, exponentials, and logarithms
+            \item Absolute values, \texttt{min(x, y)}, \texttt{max(x, y)}, and other miscellaneous common operators
+        \end{itemize}
+        \item Conditionals, loops, and boolean logical expressions
+        \item Linear algebra
+        \begin{itemize}[noitemsep]
+            \item Vector operations (dot, cross, outer products etc.)
+            \item Vector and matrix norms
+            \item Vector and matrix products
+            \item Linear solves, Moore-Penrose pseudoinverses
+            \item Eigenvalue decomposition and other factorizations
+        \end{itemize}
+        \item Many common utility functions (e.g. \texttt{linspace()})
+        \item Interpolation, including N-dimensional and higher-order
+        \item Numerical differentiation and integration
+        \item etc.
+    \end{itemize}
+
+    \noindent
+    Advanced solvers for specific subproblems (DAEs, nonlinear iterative rootfinders, QP solvers, SOCP solvers, adaptive-step integrators, etc.) are all available by directly interfacing with the underlying CasADi library; these are mutually-compatible with the AeroSandbox numerics stack. Speaking more broadly, the breadth of functions supported here is largely indebted to the richness of the CasADi library \cite{casadi}.
+\end{example}
+
+In practice, this list of differentiable functions covers every single practical engineering design case that has been examined to date.
+
+In the event that a function without differentiation support is called on an object that requires differentiation (e.g. any composition of an optimization variable), an error is thrown. The AeroSandbox numerics stack automatically falls back on the (non-differentiable) NumPy backend on objects that do not require differentiation, as this is more speed- and memory-efficient.
+
+All functions in the AeroSandbox numerics library are continuously tested with both numerics backends and cross-compared to verify reliability; this testing campaign is further detailed in Section \ref{sect:testing}.
+
+
+\section{Limitations}
+
+Although the AeroSandbox core (which consists of the optimization and numerics stacks) is quite powerful, it is not without a few limitations.
+
+\subsection{Restriction to Glass-Box Models}
+\label{sect:glass-box}
+
+Models used in AeroSandbox must be \textit{glass-box}. In other words, models must be coded in Python using \texttt{aerosandbox.numpy} numerics. Mathematically, nearly every engineering analysis can fit into this framework. In practice, however, users sometimes wish to use existing legacy \textit{black-box} codes (e.g. a RANS CFD code written in C++), but this is not possible as it breaks the automatic differentiation trace.
+
+Although these black-box models cannot be used as-is, there are still several workarounds that allow these models to be integrated into a differentiable framework:
+
+\begin{itemize}
+    \item \textbf{Surrogate modeling:} Instead of directly using the black-box model, we draw samples from the model that are then used to construct a differentiable surrogate model. This approach is tractable when the input space of the black-box model can be \textit{well-sampled}. Specifically, this works well when the model's input dimensionality, runtime, and nonlinearity are relatively low. Surrogate modeling approaches are highly integrated into AeroSandbox; popular surrogate modeling techniques such as fitting and interpolation are discussed in Chapter \ref{chapter:modeling}.
+    \item \textbf{Rewrite the code:} For simpler black-box models, it is often possible to re-write these models from scratch in AeroSandbox syntax, allowing them to be directly integrated into the code. This is often less daunting of a task than it may initially appear, as demonstrated with many examples in Chapter \ref{chapter:discipline}.
+    \item Future work aims to integrate black-box modeling into AeroSandbox via finite differencing or a user-provided gradient. This is described more in Section \ref{sect:future-work-black-box}.
+\end{itemize}
+
+\subsection{Requirements on Differentiability and Continuity}
+\label{sect:differentiability}
+
+Models used in AeroSandbox should be generally be composed of differentiable functions for good performance. Fortunately all functions of engineering interest are differentiable over almost all\footnote{using "almost all" in the mathematical sense} of their domain.
+
+However, consider the following trivial optimization problem:
+
+\begin{mini}
+    |l|
+        {x}{|x|}
+        {}{}
+    \label{eq:absmin}
+\end{mini}
+
+This problem can be directly posed to AeroSandbox, as \texttt{abs()} is a function included in the AeroSandbox numerics stack:
+
+\begin{minted}{python}
+import aerosandbox as asb
+import aerosandbox.numpy as np
+
+opti = asb.Opti()
+x = opti.variable(init_guess=1)
+opti.minimize(np.abs(x))
+sol = opti.solve()
+\end{minted}
+
+Unfortunately, this optimization program fails to converge and throws an error. We can rationalize this by considering the perspective of the optimizer. The second-order IPOPT optimizer is constructing a local quadratic representation\footnote{For memory reasons, this representation is deliberately approximate, similar to the L-BFGS algorithm.} of the design space as the optimization process progresses.
+
+For the function $f(x) = |x|$, we can construct a quadratic representation based on local information at almost all points, as $f'(x)$ and $f''(x)$ are defined almost everywhere. However, at $x=0$, these derivatives are undefined, so there is no clear quadratic approximation\footnote{Even generalized definitions of the derivative lead to a second derivative that is similar to a Dirac delta function, which causes a numerical singularity.}. Therefore, the optimizer fails.
+
+From this, we can construct a rule of thumb:
+
+\begin{example}
+    \noindent
+    \textbf{Continuity Guidelines for Gradient-Based Optimization}
+
+    \noindent
+    If the objective function or any of the constraints are not $C_1$-continuous\footnote{meaning they are continuous and have a continuous first derivative} at the optimum, convergence will almost certainly fail.
+\end{example}
+
+We note that this discontinuity in $|x|$ at $x=0$ is only troublesome because it is the optimum, so the optimizer asymptotically approaches it. If the discontinuity is not at the optimum, it poses no problem. In the extreme case, it is even possible to use a differentiable solver like AeroSandbox to solve problems with infinitely many discontinuous, non-differentiable points, as demonstrated in Appendix \ref{sect:discontinuities-at-non-optimal}.
+
+Unfortunately, optimization problems with discontinuities (in either their objective or constraints) \textit{tend} to have optima at these discontinuities. This is rigorously true in the case of linear programming, where it is guaranteed that an optimum (if it exists) will be at a vertex of the feasible polytope\footnote{This optimum may not be unique, depending on problem construction. This observation is the foundational theorem of the \textit{simplex method}.}. Furthermore, $C_1$-discontinuity (localized to specific points) can be found in a non-negligible number of engineering models: vector norms and piecewise functions are often not $C_1$-continuous.
+
+Therefore, it is worthwhile to identify several methods for addressing discontinuities and non-differentiability in engineering problems.
+
+\subsubsection{Method 1: Rewrite the Problem}
+
+Often, it is possible to simply rewrite the problem in a way that doesn't use discontinuous functions. The optimization problem described in Eq. \ref{eq:absmin} can be rewritten in a continuous manner by splitting the absolute value into two linear constraints\footnote{Subgradient methods are another approach to rewrite convex but not differentiable functions, though they are not detailed here.}:
+
+\begin{mini}
+    |l|
+        {x, y}{y}
+        {}{}
+    \addConstraint{y \geq x}
+    \addConstraint{y \geq -x}
+    \label{eq:absmin-split}
+\end{mini}
+
+Equation \ref{eq:absmin-split} is easily solved as-is in AeroSandbox, and this is by far the preferred approach to resolving discontinuities if the original formulation allows.
+
+However, this isn't always possible - to speak precisely, this is not possible when the objective function or constraint is nonconvex\footnote{If the objective function or constraint is $C_0$-discontinuous, it is nonconvex by definition.} at the discontinuity itself. An example of this is the following function:
+
+\begin{equation}
+    f(x) =
+    \begin{cases}
+        -x & \text{for } x < 0\\
+        (x-1)^2-1 & \text{for } x \geq 0\\
+    \end{cases}
+    \label{eq:nonconvex}
+\end{equation}
+
+\noindent
+which is visualized in Figure \ref{fig:nonconvex-obj}. If the non-differentiable point at $x=0$ needed to be resolved, other methods are required.
+
+\begin{figure}[H]
+    \centering
+    \ifdraft{}{\input{figures/nonconvex.pgf}}
+    \caption{The function described in Eq. \ref{eq:nonconvex}.}
+    \label{fig:nonconvex-obj}
+\end{figure}
+
+\subsubsection{Method 2: Construct a Continuous Approximation}
+
+One such alternative method to resolve discontinuous functions is to approximate them with continuous ones. Note that, unlike the previous method, this is actually changing the problem rather than simply rewriting it, so the optimum will also be only an approximation to that of the original problem.
+
+On the canonical example from Eq. \ref{eq:absmin} of $f(x) = |x|$, we can introduce two possible continuous approximations that are given by Kelly \cite{mpk2017}:
+
+\begin{equation}
+    \begin{aligned}
+        \text{Approximation 1:}& \qquad \hat{f}_1(x) = x \tanh(x / \alpha) \\
+        \text{Approximation 2:}& \qquad \hat{f}_2(x) = \sqrt{x^2 + \alpha^2} \\
+    \end{aligned}
+    \label{eq:absapprox}
+\end{equation}
+
+\noindent
+where, in both cases, $\alpha$ represents a parameter that controls the amount of approximation. These functions are depicted in Figure \ref{fig:absapprox}.
+
+\begin{figure}[H]
+    \centering
+    \ifdraft{}{\input{figures/absapprox.pgf}}
+    \caption{Two approximations to $f(x) = |x|$ as given in Eq. \ref{eq:absapprox}.}
+    \label{fig:absapprox}
+\end{figure}
+
+Because both of these approximations are $C_1$-continuous everywhere, minimization of these approximate functions is easily performed with AeroSandbox. We note that the second approximation, $\hat{f}_2(x) = \sqrt{x^2 + \alpha^2}$, is generally a superior choice, as it preserves convexity. This means that one can guarantee global optimality upon subsequent arbitrary convex transformations of the function.
+
+\subsubsection{Generalized Methods to Fix Discontinuities}
+
+Of course, $|x|$ is far from the only discontinuous function that one would want to optimize, and creating these continuous approximators for each individual function would be quite tedious. We can therefore present a few generalized methods to fix discontinuities that work on a wider array of problems.
+
+\paragraph{Softmax}
+
+One of the more common sources of $C_1$-discontinuity is the $\max()$ operator, which yields an element-wise maximum of its inputs. To resolve this, a convex operator called "softmax"\footnote{also known as "logsumexp" in some fields} can be used to replace the $\max()$ operator. Softmax is defined as:
+
+\begin{equation}
+    \max(x, y) \approx \text{softmax}(x, y) = \ln(e^x + e^y)
+    \label{eq:softmax}
+\end{equation}
+
+It can be generalized to allow an arbitrary number of inputs as well as a "hardness" parameter that details the amount of approximation relative to the $\max()$ operator. Both of these extensions are detailed further by Cook \cite{cook-softmax}, and a visualization of this generalized softmax is given in Figure \ref{fig:softmax}.
+
+\begin{figure}[H]
+    \centering
+    \ifdraft{}{\input{figures/softmax.pgf}}
+    \caption{The Softmax function}
+    \label{fig:softmax}
+\end{figure}
+
+Softmax requires careful numerical implementation that prevents floating-point overflow or underflow due to the exponentiation in its definition; this is implemented in the AeroSandbox numerics stack\footnote{implemented as \mintinline{python}{aerosandbox.numpy.softmax}}.
+
+\paragraph{Sigmoid Blending}
+
+For general, nonconvex discontinuities, we can blend between the functions on either side of a piecewise discontinuity by using a sigmoid transition function. This "blend" operator\footnote{implemented as \mintinline{python}{aerosandbox.numpy.blend}} is effectively a smooth approximation to a conditional operator.
+
+To define this blend operator, we first must define a sigmoid function $\sigma(x)$ that is scaled to have the following properties:
+
+\begin{equation*}
+    \begin{aligned}
+        \lim_{x \to -\infty}\sigma(x) &= 0 \\
+        \sigma(0) &= \frac{1}{2} \\
+        \lim_{x \to \infty}\sigma(x) &= 1 \\
+    \end{aligned}
+\end{equation*}
+
+\noindent
+One such function is:
+
+\begin{equation}
+    \sigma(x) = \frac{\tanh(x) + 1}{2}
+    \label{eq:sigmadef}
+\end{equation}
+
+\noindent
+Then, we can define the blend operator as a sigmoid-weighted linear combination of the two sides of the discontinuity:
+
+\begin{equation}
+    \text{blend}\big(f_1, f_2, s; x \big) = \sigma\big(s(x)\big) \cdot f_1(x) + \Big[1 - \sigma\big(s(x)\big)\Big] \cdot f_2(x)
+\end{equation}
+
+\begin{eqexpl}
+    \item{$f_1(x)$} The function on one side of the discontinuity
+    \item{$f_2(x)$} The function on the other side of the discontinuity
+    \item{$s(x)$} A "switch" function that acts as the conditional statement, depending on its value. Hardness can be controlled by linear scaling of $s(x)$.
+\end{eqexpl}
+
+The blend operator does not preserve convexity as softmax does, but it has the benefit of yielding a general approximation for a much broader set of discontinuous problems. The blend operator is a generalization of the first approximation to $|x|$ given in Eq. \ref{eq:absapprox}, so its graphical characteristics can be examined in the $\hat{f}_1(x)$ trace of Figure \ref{fig:absapprox}.
+
+%\subsection{Domain Limits, Infinite Gradients, and Infeasible Iterates}
+%
+%Although engineering models are generally $C_1$-continuous at almost all points in their domain, many models have a limited domain. Consider the following model of the ideal power required to drive a propeller, following from disc actuator theory \cite{unified-propulsion}:
+%
+%\begin{equation}
+%    P = \frac{1}{2} T u_\infty \Bigg( 1 + \sqrt{\frac{T}{\frac{1}{2} \rho u_\infty^2 A} + 1} \ \Bigg)
+%    \label{eq:prop-power}
+%\end{equation}
+%
+%\begin{eqexpl}
+%    \item{$P$} Power
+%    \item{$T$} Thrust force
+%    \item{$u_\infty$} Freestream velocity
+%    \item{$\rho$} Freestream air density
+%    \item{$A$} Propeller disc area
+%\end{eqexpl}
+%
+%%\noindent
+%%Suppose we wish to find the maximum power
+%
+%\noindent
+%In the $u_{\infty} \to 0$ limit, corresponding to a static condition, this reduces to:
+%
+%$$ P = \sqrt\frac{T^3}{2\rho A}$$
+%
+%\noindent
+%Suppose we (naively) rewrite this as $P = (2\rho A) ^ {-\frac{1}{2}} \cdot \big(\sqrt{T}\big)^3$, assume fixed unity $\rho$ and $A$, and pose the following optimization problem\footnote{dropping units here for the sake of concise example}:
+%
+%\begin{mini}|l|
+%    {T}{P = \big(\sqrt{T}\big)^3}
+%    {}{}
+%    \addConstraint{T \geq 0}
+%    \label{eq:prop-power-minimize}
+%\end{mini}
+%
+%The solution (by inspection) is $T = 0, P(T)=0$. We would expect to be able to find this with a computational method: the continuity requirements are satisfied: $P$ and $\diff{P}{T}$ are defined at the optimum and our constraint restricts us to the space where these are defined. However, the following code implementation fails:
+%
+%\begin{minted}{python}
+%import aerosandbox as asb
+%import aerosandbox.numpy as np
+%
+%opti = asb.Opti()
+%T = opti.variable(init_guess=1)
+%P = np.sqrt(T) ** 3
+%opti.minimize(P)
+%sol = opti.solve()
+%\end{minted}
+%
+%Suppose we wish to pose the naive problem of finding the minimum
+%
+%Another limitation of AeroSandbox is its ability to handle functions outside of thei
+
+
+\section{Nonlinear Feasibility Problems and SAND Architectures}
+
+A general nonlinear optimization framework such as AeroSandbox has utility far beyond ordinary optimization problems, as many workhorse algorithms of scientific computing can be efficiently reframed as nonlinear optimization problems.
+
+Here, we examine the common problem of solving an implicit system of governing nonlinear equations. This task is effectively synonymous with engineering analysis: nearly all analyses can be distilled into solving a system of nonlinear equations. In a general sense, this analysis problem can be written as a root-finding problem for the vector-valued function $g$:
+
+\begin{equation*}
+    \begin{split}
+        \vec{x} &\in \R^n \\
+        \vec{g} &:\ \R^m \to \R^n \\
+    \end{split}
+\end{equation*}
+
+\begin{equation}
+    \vec{g}(\vec{x}) = \vec{0} \implies
+    \begin{cases}
+        g_1(x_1, x_2, \dots, x_n) = 0 \\
+        g_2(x_1, x_2, \dots, x_n) = 0 \\
+        \dots \\
+        g_m(x_1, x_2, \dots, x_n) = 0 \\
+    \end{cases}
+    \label{eq:nonlinear}
+\end{equation}
+
+%There are many numerical techniques that have been developed to solve this problem, but by far the most popular approach on strongly-coupled problems is a Newton solve. This Newton solve requires several convenient properties
+
+This can be rewritten as an optimization problem with equality constraints and no objective:
+
+\begin{mini}
+    |l|
+        {\vec{x}}{0}
+        {}{}
+    \addConstraint{\vec{g}(\vec{x})=\vec{0}}
+    \label{eq:nonlinear-opti}
+\end{mini}
+
+This type of optimization problem is known as a \textit{feasibility problem}, where the goal is to find any feasible solution. This corresponding feasibility problem shown in Eq. \ref{eq:nonlinear-opti} encodes the same problem information as the original nonlinear system, yet it generalizes the notion of a nonlinear solve to allow many powerful new features.
+
+First, we consider that the original nonlinear problem given in Eq. \ref{eq:nonlinear} would likely be solved with a Newton iteration method, which tends to be the most efficient choice for large, strongly-coupled problems. A classical Newton's method requires several specific properties: $m = n$, and the Jacobian matrix must be invertible at every step of the iterative solve\footnote{These requirements can be alleviated with modified Newton methods that use generalized inverses.}.
+
+Assume these properties hold. Then, if the corresponding optimization problem in Eq. \ref{eq:nonlinear-opti} is given to a modern 2\textsuperscript{nd}-order gradient-based optimizer (such as IPOPT via AeroSandbox), it will also be directly solved with a Newton system (after the Lagrangian is formed) to yield the same result as Eq. \ref{eq:nonlinear}. Therefore, although Eq. \ref{eq:nonlinear-opti} perhaps appears more complex than Eq. \ref{eq:nonlinear}, computational performance on these two problems is essentially identical.
+
+The power of the optimization approach shows when the problem is less well-behaved and these conditions for a classical Newton's method are not satisfied. In the case of an underconstrained system (generally $m < n$), the optimization frameworks allows a solution to be found, even though the solution is not unique. If desired, the solution can be made unique by adding an objective function that applies weak optimization pressure in a given direction; this essentially "selects" a desired solution from the set\footnote{generally uncountably infinite} of all feasible ones.
+
+In the case of an overconstrained system ($m > n$), Eq. \ref{eq:nonlinear-opti}, the optimization framework allows the constraints to be relaxed in a variety of ways. The objective can be used to regularize the system as desired, including common examples such as:
+
+\begin{figure}[H]
+    \centerline{\input{figures/nonlinear-overconstrained.tikz}}
+    \caption{Methods of regularizing overconstrained nonlinear systems using various norm metrics.}
+    \label{fig:opti-norms}
+\end{figure}
+
+In both of these cases, an optimization formulation lets us regularize our ill-posed original nonlinear system into a well-posed optimization problem, with no loss in computational speed.
+
+\subsection{Simultaneous Analysis and Design (SAND)}
+\label{sect:sand}
+
+However, perhaps the most powerful feature of moving nonlinear systems of equations into the constraints of an optimization problem is that it lets us arbitrarily combine many nonlinear analyses. And, because a design optimization problem can be thought of as an underconstrained analysis, we can once again use the objective function to "select" an optimal design from the set of feasible designs.
+
+This technique is aptly known as \textit{Simultaneous Analysis and Design} (SAND), as it essentially embeds the engineering analyses required for design optimization into the optimization problem itself: analyses and cross-discipline relationships are enforced implicitly via equality constraints.
+
+The SAND paradigm, which was pioneered by Haftka \cite{haftka}, is an extremely efficient way to address the coupling problems of aerospace design optimization that were described in Section \ref{sect:coupling}. To understand the efficiency benefit of SAND, we must consider its alternative: the more straightforward \textit{nested} optimization architecture.
+
+In a nested architecture, an optimizer is simply wrapped around an existing analysis code. As the optimizer iterates, this analysis code (which, for generality, is assumed to be nonlinear) will perform subiterations at each iteration in order to satisfy its governing equations. This is quite wasteful, as computational power is spent satisfying governing equations to precise tolerances early in the optimization process when the design is far from optimal.
+
+%Furthermore, we make the observation that feasibility without optimality is uninteresting, and optimality without feasibility is uninteresting.
+
+By contrast, a SAND architectures solves for both \textit{optimality}\footnote{or more precisely, \textit{dual feasibility}} and \textit{feasibility} (i.e. satisfaction of the governing equations) simultaneously. This is more theoretically sound, as it recognizes the observation that feasibility without optimality is uninteresting, and optimality without feasibility is uninteresting. Additionally, SAND is much more computationally efficient than nested optimization in practice, as it eliminates internal closure loops and subiteration.
+
+Of course, the drawback of a SAND architecture is that it does not work on black-box models: the governing equations must be directly accessible to the optimizer in order to include them in the constraints. However, because this requirement is identical to the glass-box requirement of automatic differentiation, this does not present a new restriction in the case of a differentiable optimization environment like AeroSandbox.
+
+% TODO XDSM?
+
+
+\section{Integrators: Solving ODEs with AeroSandbox}
+\label{sect:integrators}
+
+One category of governing equation that we often wish to solve using a SAND architecture is an ordinary differential equation (ODE). ODEs appear in many appear in any aircraft design optimization problem where dynamics or mission profile are important; as discussed in Section \ref{sect:dynamics}, this represents the vast majority of aerospace cases.
+
+In the case of an ODE, the idea of using a SAND architecture essentially entails formulating an implicit integration scheme where relations between timesteps are posed as equality constraints.
+
+%\subsection{Discretization}
+% TODO write
+
+
+\subsection{Example: Falkner-Skan ODE}
+
+These principles can be demonstrated on an aerospace analysis example by solving the Falkner-Skan boundary layer equation. The Falkner-Skan boundary layer equation describes the velocity profile of viscous flow within a self-similar boundary layer, under the assumption that the edge velocity of the boundary layer follows some power law with respect to downstream distance. The equation, which is described more fully by Drela \cite{avf}, can be written as:
+
+\begin{example}
+    \textbf{Falkner-Skan Boundary Layer Problem}
+
+    \noindent
+    Solve for $F(\eta)$, given the governing ODE:
+
+    \begin{equation}
+        F''' + \frac{1+a}{2} ( F \cdot F'' ) + a \big[1 - (F')^2 \big] = 0
+        \label{eq:fs}
+    \end{equation}
+
+    \noindent
+    with boundary conditions:
+
+    \begin{equation*}
+        \begin{aligned}
+            F(0) &= 0 \\
+            F'(0) &= 0 \\
+            F'(\infty) &= 1 \text{, which we approximate as } F'(10) = 1\\
+        \end{aligned}
+    \end{equation*}
+
+    \begin{eqexpl}
+        \item{$\eta$} The nondimensionalized distance from the wall
+        \item{$(\ )'$} A derivative with respect to $\eta$
+        \item{$F(\eta)$} The nondimensionalized total mass flow rate between the wall and $\eta$
+        \item{$F'(\eta)$} The nondimensionalized velocity profile; $F' = u / u_e$
+        \item{$F''(\eta)$} The nondimensionalized shear profile
+        \item{$a$} A known constant that describes the edge velocity profile as $u_e \propto x^a$, with $a \geq -0.0904$ known\footnote{A separation singularity occurs below this value.}
+    \end{eqexpl}
+
+
+\end{example}
+
+The Falkner-Skan equation is chosen because it shares many qualities typical of ODEs in engineering systems:
+
+\begin{itemize}[noitemsep]
+    \item It is nonlinear
+    \item It is higher-order (third-order, specifically)
+    \item It is a boundary value problem rather than an initial value problem, so explicit solution is difficult\footnote{Eq. \ref{eq:fs} can be solved with explicit integration using a shooting method as described by Kelly \cite{mpk2017}, but is extremely unstable due to the high ODE order and nonlinearity of the Falkner-Skan equations.}.
+\end{itemize}
+
+\subsubsection{Solving the ODE}
+
+To solve this ODE within an optimization framework, we first make the observation that the Falkner-Skan equation (like all higher-order ODEs) can be split apart into a system of coupled first-order ODEs. Then, using a change of variables and algebraic manipulation, we can write the equivalent ODE system of three first-order equations:
+
+\begin{equation}
+    \begin{aligned}
+        F' &= U \\
+        U' &= S \\
+        S' &= -\frac{1 + a}{2}FS - a(1-U^2)\\
+    \end{aligned}
+\end{equation}
+\noindent
+with boundary conditions:
+
+\begin{equation*}
+    \begin{aligned}
+        F(0) &= 0 \\
+        U(0) &= 0 \\
+        S(10) &= 1 \\
+    \end{aligned}
+    \label{eq:fs-rewritten}
+\end{equation*}
+
+Suppose that we wish to solve this ODE for $a=0.1$ using the AeroSandbox optimization framework. The AeroSandbox optimization stack has bespoke methods\footnote{\mintinline{python}{Opti.derivative_of()} and \mintinline{python}{Opti.constrain_derivative()}} which declare new variables as derivatives of existing variables and constrain existing variables. By default, these implement a direct trapezoidal collocation method for integration, following the principles described by Kelly \cite{mpk2017}. The result is that this complicated ODE can be solved with sophisticated methods in less than 30 lines of code in AeroSandbox, as demonstrated in Listing \ref{listing:fs}.
+
+We require an initial guess, and for that we guess a parabolic velocity profile given by $U(\eta) = 1 - (1 - \eta/10)^2$; this is then integrated and differentiated to obtain guesses for $F$ and $S$. This system can now be solved, with the resulting $F$, $U$, and $S$ arrays are presented in Figure \ref{fig:fs}. We note that despite the fact that this is a third-order boundary value problem and therefore prone to divergence upon explicit integration, the implicit SAND approach shown in Listing \ref{listing:fs} handles it fine, converging in only 4 iterations.
+
+\begin{listing}[H]
+    \begin{minted}[mathescape=true]{python}
+import aerosandbox as asb
+import aerosandbox.numpy as np
+
+opti = asb.Opti()  # Initialize an optimization environment.
+
+a = 0.1
+
+eta = np.linspace(0, 10, 100)  # Discretize $\eta \in [0, 10]$ with 100 points.
+
+F = opti.variable(init_guess=eta + 10 / 3 * (1 - eta / 10) ** 3)
+
+U = opti.derivative_of(F, with_respect_to=eta,
+    derivative_init_guess=1 - (1 - eta / 10) ** 2
+)
+S = opti.derivative_of(U, with_respect_to=eta,
+    derivative_init_guess=0.2 * (1 - eta / 10)
+)
+
+opti.constrain_derivative(S, with_respect_to=eta,
+    derivative=-(1 + a) / 2 * F * S - a * (1 - U ** 2)
+)
+
+opti.subject_to([  # Implement boundary conditions.
+    F[0] == 0,
+    U[0] == 0,
+    U[-1] == 1,
+])
+
+sol = opti.solve()
+    \end{minted}
+    \caption{The AeroSandbox code to solve the Falkner-Skan system as in Eq. \ref{eq:fs-rewritten}.}
+    \label{listing:fs}
+\end{listing}
+
+\begin{figure}[H]
+    \centering
+    \ifdraft{}{\input{figures/fs.pgf}}
+    \caption{Solutions of the Falkner-Skan system in Eq. \ref{eq:fs-rewritten} from the code in Listing \ref{listing:fs}.}
+    \label{fig:fs}
+\end{figure}
+
+\subsubsection{Inverse Analysis}
+
+However, the power of ODE analysis in a SAND architecture extends far beyond simply solving the ODE. Here, we demonstrate this by turning the problem around and performing inverse analysis.
+
+Referring to Figure \ref{fig:fs}, we notice that an interesting phenomenon is occuring for the $a \approx -0.0904$ case. This is an incipient separation flow, which can be identified from the fact that the nondimensional wall shear $S(\eta) = \diff{U}{\eta}$ at the wall ($\eta = 0$) is approaching zero.
+
+However, the value of $a$ for this incipient separation flow is only approximate, and it was found by trial and error. Suppose we now ask: at what exact value of $a$ does the flow separate, as indicated by exactly zero wall shear $S(0)=0$?
+
+If this ODE had been solved with traditional methods, answering this question would be quite laborious - even in an implicit method, tracing a residual equation $a$ manually would be very tedious. We could look to trial and error, but we run into a complication: for $a<-0.0904$, no solution exists, so trial and error is cumbersome. This is common in engineering models - often the forward problem is well-posed, but the inverse problem is not.
+
+However, we can solve this inverse design problem extremely easily in a SAND framework such AeroSandbox, here with the addition of only two lines of code. To modify Listing \ref{listing:fs} to solve this inverse problem:
+
+\begin{enumerate}[noitemsep]
+
+    \item We replace the \mintinline{python}{a = 0.1} line with a new variable definition:
+    \begin{minted}{python}
+a = opti.variable(init_guess=1)
+    \end{minted}
+
+    \item We simply add a wall shear constraint:
+    \begin{minted}{python}
+opti.subject_to(S[0] == 0)
+    \end{minted}
+
+\end{enumerate}
+
+After these modifications, we can obtain the value of $a$ at incipient separation to near machine precision without any trial and error or manual derivation of residual Jacobians. All of these numerics are abstracted by the AeroSandbox solver, which critically lets the user focus on the engineering problem rather than the numerical implementation.
+
+This \textit{inverse analysis} that is demonstrated here occurs all the time in engineering. For example: one might analyze an airfoil at an angle of attack $\alpha = 5^\circ$ and find a lift coefficient $C_L = 0.6$; this is the forward problem. If we then wish to compute the angle of attack that would yield $C_L=0.5$, we must solve the inverse problem to "go backwards" through this analysis. Inverse analysis is often quite tedious to implement without the abstracted approach used here, but it is easily implemented in AeroSandbox.

@@ -1,0 +1,305 @@
+\chapter{Challenges of Aircraft Design Optimization}
+\label{chapter:challenges}
+
+Aircraft design optimization problems tend to present several unique challenges when compared to general engineering design optimization. Here, we identify a few of these challenges that have significant ramifications for the architecture of a general-purpose computational framework for aircraft design optimization.
+
+
+\section{Modeling and Optimizing Dynamic Systems}
+\label{sect:dynamics}
+
+Perhaps the first major challenge with aircraft design optimization is that we are optimizing systems that are inherently time-dependent and dynamic: colloquially, performance depends not only on \textit{what} you fly, but also \textit{how} you fly. Therefore, we require a means to optimize parameters of dynamical systems. An example of this would be optimizing the wing area of an airplane throughout a prescribed mission - a single, fixed value must provide optimal performance when integrated across all flight conditions.
+
+This capability to optimize systems that must operate at many different operating points is critical in aircraft design. With rare exceptions, nearly all aircraft operate at very different operating points throughout their missions. Examples of this time-dependency in aerospace problems abound.
+
+\begin{example}
+    \textbf{Examples of Time-Dependency in Aerospace Design}
+    \begin{itemize}
+        \item A Boeing 787 Dreamliner has a fuel mass fraction of 44.4\%\footnote{With a max fuel load of 223,378 lbs. and a max design takeoff weight of 502,500 lbs.} \cite{boeing787stats}. To first order\footnote{The cruise airspeed of a commercial airliner is typically roughly constant-Mach, and cruise altitude is assumed constant.}, this implies that the aircraft's design lift coefficient also changes by a similar amount over the duration of a max-range flight. An analogous fuel-burn consideration will apply to the design of any combustion-powered flight vehicle, which represent the vast majority of aerospace design problems.
+        \item A solar-powered airplane relies on a cyclical injection of energy into the airborne system via solar insolation. Given the availability of gravitational potential energy as a means of energy storage, energy-optimal trajectories need not be steady-state over a daily cycle.
+        \item The performance of an orbital launch vehicle is highly dependent on its ascent profile; complex trades between altitude, engine performance, dynamic pressure, and vehicle recoverability abound, with strong implications for even first-order design.
+        \item The performance of urban air mobility vehicles depends heavily on takeoff profiles, landing profiles, and emergency cases; these often represent max-power flight conditions that size vehicle propulsion and power systems.
+    \end{itemize} % TODO add sources to these
+\end{example}
+
+All of these examples point to the same conclusion, which is that engineering systems typically must operate well at a variety of conditions. In other words, optimality at a point condition is insufficient - designs must be \textit{robust} across some range of expected operating conditions. There are several ways that this time-dependency is traditionally handled in engineering design optimization:
+
+\subsection{Approach 1: Steady-State Point Reduction}
+
+In the most general sense, the time-evolution of any dynamical system (such as an aircraft) can be expressed as a system of nonlinear, coupled ordinary differential equations \cite{Betts2009}:
+
+\begin{equation}
+    \diff{\vec{x}}{t} =
+    \begin{bmatrix}
+        \diff{\big(x_1(t)\big)}{t} \\
+        \diff{\big(x_2(t)\big)}{t} \\
+        \dots \\
+    \end{bmatrix} =
+    \begin{bmatrix}
+        f_1\Big(\vec{x}(t), \vec{u}(t), t\Big) \\
+        f_2\Big(\vec{x}(t), \vec{u}(t), t\Big) \\
+        \dots \\
+    \end{bmatrix}
+    \label{eq:ode}
+\end{equation}
+
+\begin{eqexpl}
+    \item{t} Time
+    \item{$\vec{x}(t)$} State vector, which fully describes the state of the system at time $t$
+    \item{$\vec{u}(t)$} External control inputs, such as a surface deflection or throttle setting
+    \item{$f_i()$} Functions that describe system evolution (often, equations of motion analogous to $F=ma$)
+\end{eqexpl}
+
+The simplest method of handling time-dependency here is to make the steady approximation that the system remains at some \textit{trim state} for the entire duration of the mission; for an aircraft, this typically means that all state variables except for position are constant. This implies that the control vector $\vec{u}(t)$ is set in order to make this statement true; for example, throttle setting is set so that airspeed is held constant. Under these assumptions, one can reduce the unsteady system dynamics down to a single, steady operating point that is expected to be representative of the operating envelope.
+
+An example of this approach is found in \textit{SimpleAC}, a canonical problem for passenger aircraft design presented as part of GPKit, a library for aircraft design optimization using geometric programming; a full description of this design problem is given later in Equation \ref{eq:simpleac}. The relevant example from SimpleAC here is the constraint associated with lift-weight balance, which is given as:
+
+\begin{equation}
+    W_0 + W_w + \frac{1}{2} W_f \leq \frac{1}{2}\rho V^2 C_L S
+    \label{eq:simpleac-lift}
+\end{equation}
+
+\begin{eqexpl}
+    \item{$W_0$} Empty weight
+    \item{$W_w$} Wing weight
+    \item{$W_f$} Fully-loaded fuel weight
+    \item{$\rho$} Air density
+    \item{$V$} Airspeed
+    \item{$C_L$} Cruise lift coefficient
+    \item{$S$} Wing area
+\end{eqexpl}
+
+In other words, the constraint assumes that the aircraft's cruise weight throughout flight is well-approximated by the weight of the aircraft with half of its fuel burnt. This performance relation is a steady-state point reduction that aims to address the inherent time-dependency of the fuel-burn relation. Unfortunately, because the effect of aircraft weight on fuel burn rate has significant nonlinearity (especially given the large fuel fractions typical of a passenger aircraft), this is a relatively poor assumption.
+
+\subsubsection{Point Reduction by Closed-Form Approximation}
+
+A more sophisticated way to address the time-dependency of fuel burn is the Breguet range equation\footnote{The reason that SimpleAC uses the half-fuel-burn assumptions rather than the Breguet equation is that the GPKit geometric programming framework is unable to model logarithms.} \cite{raymer}. The Breguet equation is a closed-form model for the fuel-burn time dependency over a given mission segment; its derivation uses energy balance to make an implicit closure for the fuel burn rate that can then conveniently be integrated analytically. The equation is stated in its common form in Equation \ref{eq:breguet}:
+
+\begin{equation}
+    R = V \left(\frac{L}{D}\right) I_{sp} \ln\left(\frac{W_i}{W_f}\right)
+    \label{eq:breguet}
+\end{equation}
+
+\begin{eqexpl}
+    \item{$R$} Range over a given mission segment
+    \item{$L/D$} Lift-to-drag ratio
+    \item{$I_{sp}$} Propulsor specific impulse
+    \item{$W_i$} Initial total aircraft weight (beginning of mission segment)
+    \item{$W_f$} Final total aircraft weight (end of mission segment, after fuel burn)
+\end{eqexpl}
+
+Although the Breguet equation does attempt to model the higher-order dynamic effect of fuel burn, it is still effectively a point relation because it inevitably leads to the question of which operating point the inputs $V$, $L/D$, and $I_{sp}$ should be evaluated at.
+
+Furthermore, while the Breguet equation is more accurate than a point reduction at the half-fuel-burn state, it too has serious limitations. For example, the Breguet range equation assumes that $L/D$ is independent of wing loading, despite the fact that in our 787 Dreamliner example, wing loading decreases by approximately 44\% throughout flight. Furthermore, it is assumed that propulsor $I_{sp}$ is independent of the fuel burn rate, a quantity that the Breguet model also predicts will decrease by approximately 44\% over the course of the flight. The Breguet equation also leaves no clear strategy for addressing climb or descent: even if a vertical speed energy correction is made, the effect of continuously-varying ambient air density and associated downstream effects on vehicle performance is not captured. Finally, path constraints (such as an arbitrary time-varying Mach number schedule or airspace limitations) are impossible to implement with this approach.
+
+There is also a deeper and more subtle problem with any attempt to address dynamics by reduction to a single operating point: design optimization within a high-dimensional design space at a single operating point inevitably leads to highly-sensitive designs that perform poorly in practice. This phenomenon is elegantly demonstrated by Drela in several airfoil design case studies, where an optimizer exploits a single given operating point to find a high-performing design with exceptionally-poor off-design performance \cite{Drela1998}. As one might suspect, multipoint optimization is a strategy to mitigate this, and Drela concludes that robust design optimization of smooth geometry generally requires a number of operating points roughly comparable to the number of degrees of freedom.
+
+For all these reasons, design optimization around a single fixed operating point is clearly insufficient for any study beyond first-order in the vast majority of aerospace cases.
+
+% TODO add error analysis of singlepoint
+
+\subsection{Approach 2: Multiple Segments with Point Reduction (Multipoint Optimization based on Segments)}
+
+For slightly improved fidelity, one can split the given mission up into segments. For an aircraft, a prototypical mission might consist of the following segments \cite{raymer}:
+
+\begin{enumerate}[noitemsep]
+    \item Takeoff and Climb
+    \item Cruise
+    \item Loiter
+    \item Cruise
+    \item Descent and Landing
+\end{enumerate}
+
+For each of these segments, a representative operating point (or closed-form approximation to one analogous to the Breguet equation) is chosen. In addition, each of these operating points might be augmented with various perturbations about this point, allowing consideration of off-design performance.
+
+Performance is analyzed at each of these individual points. Finally, to obtain a scalar objective function, some reduction (e.g. integration with respect to time, linear combination, or worst-case performance) is then done by combining performance metrics across all analyzed operating points.
+
+This is a basic example of \textit{multipoint optimization}, an approach to robust design where a design is optimized based on an aggregate of its performance at a finite number of operating conditions.
+
+% TODO add figure?
+
+\subsection{Approach 3: Full Simulation via ODE Integration}
+\label{sect:dynamics-ode}
+
+Both of these methods presented thus far are steady-state or piecewise-steady-state point reductions to what is truly an unsteady system of ODEs (as illustrated in Equation \ref{eq:ode}). We have demonstrated that these simple approaches lead to inaccurate performance analysis and drive an optimization study to brittle, overly-sensitive designs.
+
+An alternative approach that alleviates both of these problems is to directly simulate the flight vehicle throughout its mission, without any kind of \textit{a priori} segmentation. This approach significantly improves modeling fidelity and flexibility on problems where dynamics are important (which represent the vast majority of aerospace problems).
+
+This "full simulation" approach is the one most studied in the present work, because the optimization framework described in Chapter \ref{chapter:aerosandbox} is especially suited to solving these problems.
+
+\subsubsection{Selection of State Variables}
+
+To simulate the full vehicle dynamics (as something like a flight simulator might do), we first need to identify the relevant state variables. There are several common sources for these state variables:
+
+\begin{itemize}
+    \item \textbf{Flight Dynamics:} Any rigid free-flying body has 12 state variables that describe its motion at a given moment in time \cite{fva}. These can be grouped into four categories, each of which is a vector containing three degrees of freedom\footnote{In a Cartesian sense, each category (e.g. position) has $x$, $y$, and $z$ components in some frame}: position, orientation, velocity, and angular velocity. A Cartesian illustration of these 12 state variables is given in Figure \ref{fig:flight-dynamics-vars}. Each of these 12 state variables has an associated ODE related to the equations of motion.
+    \begin{figure}
+        \centering
+%        \ifdraft{}{\includegraphics{}}
+        \input{figures/flight-dynamics-vars.tikz}
+        \caption{One possible parameterization of the 12 flight dynamics state variables. Notation adapted from \cite{fva}.}
+        \label{fig:flight-dynamics-vars}
+    \end{figure}
+
+    \item \textbf{Power Systems Accounting:} Any aircraft with a depletable onboard power source (e.g. stored fuel or a battery) will have a state variable that describes the energy remaining\footnote{In reality, a system might have multiple state variables here to correspond to multiple fuel tanks or batteries, but this consideration is neglected here for simplicity.}. The associated ODE relates energy depletion rate to a control input such as throttle setting.
+    \item \textbf{Propulsion State:} Aerospace propulsion systems exhibit hysteresis (i.e. "lag") in response to control inputs. Many notable examples, such as turbofan spool time and quadcopter propeller inertia, result in dynamic performance limits that are significant enough to have direct operational consequences. However, these lag effects typically do not affect vehicle performance in a way that is significant to design optimization, so they are neglected for the remainder of this work. % TODO elaborate?
+    \item \textbf{Flexible Airframes:} Flexible bodies (e.g. a wing experiencing considerable aeroelastic effects) contribute an infinite number of state variables to a dynamic system. (In practice, this would be discretized to a large but finite number of structural degrees of freedom.) Due to the difficulty of modeling this, we often assume that any coupling between aeroelastic effects and rigid body flight dynamics can be adequately treated with surrogate models as in Section \ref{sect:surrogate}; thus, this coupling is neglected for the remainder of this work.
+\end{itemize}
+
+Thus, flight dynamics and power systems accounting represent the two categories of state variables that we nearly always need to account for. Between these two categories, a basic aerospace system typically has 13 state variables.
+
+However, many of the 12 flight dynamics state variables can be removed with minimal loss of fidelity for the purposes of design optimization. Recalling that the sizing problem is effectively performance analysis, we can remove variables that have insignificant impact on overall vehicle performance.
+
+The first simplifying assumption that can be made is the \textit{2D reduction}, where the 3D dynamics are projected onto the 2D range-altitude space. In other words, in the notation described in Figure \ref{fig:flight-dynamics-vars}, the state variables of roll $\phi$, yaw $\psi$, roll rate $\dot\phi$, yaw rate $\dot\psi$, cross-track position $y_e$, and cross-track velocity $v_e$ are all assumed to be zero and neglected. A side effect of this is that any lateral flight dynamics modes\footnote{e.g. spiral mode or Dutch roll} are neglected. This leaves six flight dynamics state variables: downrange distance $x_e$, altitude $z_e$, downrange speed $u_e$, vertical speed $w_e$, pitch $\theta$, and pitch rate $\dot\theta$. A prerequisite assumption for making this 2D reduction is that cross-track dynamics have no impact on key performance metrics such as range and endurance.
+
+A further assumption that can be made is the \textit{quasi-steady} assumption, where the pitch rate $\dot\theta$ is assumed to be negligibly small. In the $\dot\theta\rightarrow 0$ limit, the net pitching moment is zero. For an airplane, this quasi-steady simplification essentially assumes that the short-period and phugoid flight-dynamics modes are sufficiently \textit{spectrally-separated}\footnote{A full treatment of this spectral separation assumption is available in \cite{fva}} that the short-period mode can be neglected.
+
+This assumption of an instantaneous short-period mode implies that any trimmable flight condition\footnote{defined as any condition where $\sum F = \sum M = 0$ can be achieved with allowable control inputs} is reachable instantaneously; in other words, the angle of attack $\alpha(t)$ can be directly prescribed as a control input \footnote{subject to the zero-net-moment constraint, which is typically satisfied via control surface deflections.}. It is therefore useful to decompose the pitch angle $\theta$ into a flight path angle $\gamma$ and an angle of attack $\alpha$, as shown in equation \ref{eq:pitch-split}:
+
+\begin{equation}
+    \theta(t) = \gamma(t) + \alpha(t)
+    \label{eq:pitch-split}
+\end{equation}
+
+\begin{eqexpl}
+    \item{\gamma(t)} $\arctan\big(\frac{w_e}{u_e}\big)$, the flight path angle
+    \item{\alpha(t)} Angle of attack
+\end{eqexpl}
+
+With this decomposition, we eliminate one more state variable, as $\alpha(t)$ is a control input and $\gamma(t)$ is a pure function of the existing state variables $u_e$ and $z_e$. So, after both of these assumptions, only the four flight dynamics state variables listed in Equation \ref{eq:fd-vars-simp} remain:
+
+\begin{equation}
+    \begin{aligned}
+        x_e(t)&\text{: Downrange distance}\\
+        z_e(t)&\text{: Altitude}\\
+        u_e(t)&\text{: Downrange speed}\\
+        w_e(t)&\text{: Vertical speed}\\
+    \end{aligned}
+    \label{eq:fd-vars-simp}
+\end{equation}
+
+In numerical schemes, the two velocity variables $u_e, w_e$ are often instead parameterized as airspeed $V(t)$ and flight path angle $\gamma(t)$. This is because the $V$-$\gamma$ velocity parameterization tends to be more energy-conserving upon numerical ODE integration than the Cartesian parameterization\footnote{For simplicity here, ambient wind speed is assumed to be zero, so $V = \sqrt{u_e^2 + w_e^2}$. Nonzero wind is discussed in Section \ref{sect:dawn-wind}.}, as $V(t)$ maps directly onto vehicle kinetic energy. % TODO add section where wind is discussed
+
+\subsubsection{Trajectory Optimization, Transcription, and Discretization}
+\label{sect:dynamics-parameterization}
+
+Using this ODE approach, the state of the modeled aerospace system can be represented as a series of four functions of time:
+
+\begin{equation}
+    \begin{aligned}
+        x_e(t)&\text{: Downrange distance}\\
+        z_e(t)&\text{: Altitude}\\
+        V(t)&\text{: Airspeed}\\
+        \gamma(t)&\text{: Flight path angle}\\
+    \end{aligned}
+    \label{eq:fd-vars-subbed}
+\end{equation}
+
+These state variables are general functions of time, and a general function space such as this is an infinite-dimensional: specifically, it is a Hilbert space. In other words, an infinite amount of information is required to fully describe any general function. Even functions with a finite domain (e.g. airspeed over a fixed-duration mission) are infinite-dimensional, as a general representation still requires an infinite amount of information\footnote{An illustration of this is the fact that it takes an infinite number of Fourier terms to exactly represent an arbitrary function on a finite domain.}.
+
+A further complication here is that the optimal functions for the state variables (collectively referred to as the \textit{trajectory}) are not known \textit{a priori}; indeed, this represents a \textit{trajectory optimization} problem that must be solved simultaneously with the vehicle optimization problem.
+
+General numerical optimization in an infinite-dimensional space is intractable\footnote{Calculus of variations is a powerful strategy for infinite-dimensional optimization in some cases, though this is an analytical approach rather than a numerical one.}, so we must perform some \textit{transcription} (a generalization of discretization) that converts\footnote{or, more precisely, \textit{projects}} the continuous problem to a tractable finite-dimensional nonlinear program. Many transcription approaches are possible; an excellent review is presented by Kelly in \cite{mpk2015} and \cite{mpk2017}. Examples in the present work generally transcribe ODEs with direct trapezoidal collocation; a full description of this algorithm and broader ODE treatment as relevant to the present work follows in Section \ref{sect:integrators}.
+
+We make a final note here that trajectory optimization is a much more challenging task than simple numerical integration of an ODE. This is primarily because every numerical ODE integrator has \textit{error} due to discretization. In traditional ODE integration, this is a nuisance that can be resolved with increased resolution or higher-order schemes ($h$- and $p$-refinement strategies, respectively). However, in trajectory optimization, the optimizer acts as an adversary that is perennially seeking to exploit and magnify this discretization error. In essence, the optimizer will seek to find any flaw with the ODE integrator and break it in a way that suits the optimization objective. Section \ref{sect:integrators} details several approaches to combat this.
+
+\subsubsection{Implications for Design Optimization}
+
+This means that the aircraft sizing problem can be decomposed into two strongly-coupled subproblems:
+
+\begin{enumerate}
+    \item \textbf{Vehicle Design}, which concerns vehicle and component sizing.
+    \item \textbf{Mission Design}, which is effectively a trajectory optimization problem.
+\end{enumerate}
+
+% TODO finish up thoughts
+
+
+\section{High-Dimensional Optimization}
+\label{sect:high-dim-opt}
+
+A second common challenge of aircraft design optimization is that design spaces tend to be quite high-dimensional. While first-order sizing studies might only consider a few variables (e.g. wing aspect ratio, wing area, and cruise airspeed), more sophisticated studies can easily have hundreds or thousands of design variables.
+
+There are two primary culprits for the high number of design variables in aerospace problems: dynamics parameterization and outer mold line\footnote{The outer mold line represents the outermost, air-facing surface of the vehicle - essentially, the "vehicle shape".} (OML) parameterization. The rationale for the high dimensionality of dynamics parameterization was previously addressed in Section \ref{sect:dynamics-parameterization}: the state variables $x_e(t), V(t)$, etc. are functions of time, and time discretization results in many degrees of freedom.
+
+Outer mold line (OML) parameterization is high-dimensional for a very similar reason: the curving, spline-like surfaces common in aerospace vehicles are also described by functions\footnote{So, a general representation of a curved surface once again requires infinite information.}, and many design variables are required to represent these functions to sufficient accuracy.
+
+A simple and common aerospace example that illustrates this challenge is the problem of airfoil geometry parameterization. There are several commonly used parameterization methods, such as the Kulfan CST parameterization, B-splines, and Hicks-Henne bump functions. However, Masters demonstrates that all methods require a minimum of approximately 40 design variables to capture a reasonable airfoil design space to within engineering tolerance\footnote{defined here as corresponding to an aerodynamic performance error of less than one lift count and one drag count.} \cite{masters2017}. Even still, 40 degrees of freedom yields a relatively coarse representation by analysis standards, as shown in Figure \ref{fig:airfoil-fig}.
+
+\begin{figure}[H]
+    \centering
+    \ifdraft{}{\input{figures/airfoil-fig.pgf}}
+    \caption{Illustration of the coarseness of an airfoil parameterized by 40 degrees of freedom\protect\footnotemark, roughly the minimum needed for airfoil design optimization \cite{masters2017}.}
+    \label{fig:airfoil-fig}
+\end{figure}
+\footnotetext{Assumes each node contributes one degree of freedom; a reasonable approximation because only normal node movement affects OML shape.}
+
+When we consider that an airplane often has several different airfoils along its span, each of which is optimized for a different local flow field, it is clear that reasonably-accurate parameterization of an aircraft OML might easily require hundreds of variables.
+
+\subsection{Addressing the Curse of Dimensionality}
+
+The high dimensionality of aircraft design optimization problems is a challenge, because the volume\footnote{Colloquially defined here as "the number of meaningfully-different feasible points"} of the feasible space tends to grow exponentially with respect to the number of dimensions. This phenomenon is referred to in the literature as the "curse of dimensionality" \cite{mdobook, mpk2017}. The curse of dimensionality makes many optimization approaches wholly intractable, so it is important to consider which optimization methods might be effective on high-dimensional problems.
+
+All optimization methods are a tradeoff between \textit{exploration} and \textit{exploitation} \cite{faury2018, jasrasaria2018}. Exploratory algorithms "leave no stone unturned", spending many function evaluations exploring the design space to increase the confidence that an optima is a global one. Exploitative algorithms hone in on a local optima as fast as possible, dramatically reducing the number of function evaluations required at the expense of reduced confidence in global optimality. In practice, this classification is a spectrum: this is visualized in Figure \ref{fig:exploration-exploitation}, where several popular optimization algorithms from Kochenderfer \cite{koch2019} and Nocedal \cite{nocedal2006} are roughly labeled.
+
+\begin{figure}[H]
+    \centerline{\input{figures/exploration-exploitation.tikz}}
+    \caption{A Short Taxonomy of Optimization Methods: Exploration vs. Exploitation.}
+    \label{fig:exploration-exploitation}
+\end{figure}
+
+Neither approach is generally superior to the other, and problems that are trivial with one approach may be wildly intractable with another. In fact, the aptly-named "No Free Lunch" theorem of optimization, as demonstrated by Wolpert and Macready \cite{Wolpert1997}, proves that increased optimizer performance on one class of problems will always come at the expense of performance in another. In effect, proper selection of an optimization algorithm for a problem requires some \textit{a priori} intuition about the objective function and constraints\footnote{In some optimization methods, namely Bayesian optimization, this \textit{a priori} intuition is formally specified as a Bayesian prior, allowing a continuous choice between exploration and exploitation.}.
+
+When solving aircraft design optimization problems, there are two primary reasons that it becomes prudent to lean as heavily as possible towards the exploitation side of the optimization spectrum:
+
+\begin{enumerate}
+    \item High-dimensional optimization is completely intractable with exploratory methods due to the curse of dimensionality. This difference in tractability is extreme: in a review of optimization methods for aerodynamic design optimization, Lyu et al. found that population-based methods required approximately $10^6$ times as many function evaluations to reach optimality compared to second-order gradient-based methods \cite{lyu2014} for a 100-variable problem\footnote{which is a relatively small problem by most aircraft design standards}.
+
+    \item Objective and constraint functions tend to be smooth, or they can be well-approximated by smooth functions with minimal labor. More precisely, functions tend to be at least $C^1$-continuous, which makes them much more amenable to second-order gradient-based methods.
+\end{enumerate}
+
+Because of this, second-order gradient-based methods are easily the tool of choice for aircraft design optimization. Although critics often point out that no guarantees of global optimality can be made, this is often far less of a concern than perhaps initially perceived. As it turns out, most aerospace sizing problems are unimodal despite their complexity. Martins concludes in \cite{mdobook} that "it is assumed far too often that any complex problem is multimodal, but that is often not the case" and "therefore, one should assume that a function is unimodal until proven otherwise."
+
+
+\section{Addressing Coupled Problems}
+\label{sect:coupling}
+
+A final challenge of aircraft design optimization is that problems are highly coupled between disciplines. This phenomenon is illustrated in Figure \ref{fig:coupled-subsystems}, which shows the driving dependencies that might be considered in the design of a passenger aircraft. Many of these interactions are examined thoroughly by Drela in literature related to the TASOPT design code \cite{Drela2011, tasopt}.
+
+\begin{figure}[H]
+    \centering
+%    \ifdraft{}{\includegraphics{}}
+    \ifdraft{}{\centerline{\input{figures/coupled-subsystems.tikz}}}
+    \caption{Commonly-studied subsystem dependencies for the design of a passenger aircraft. Arrows denote influence of one subsystem on another.}
+    \label{fig:coupled-subsystems}
+\end{figure}
+
+A key challenge that is observed in Figure \ref{fig:coupled-subsystems} is the presence of internal \textit{closure loops}, or implicit relationships between subsystems. Implicit relations are those that cannot be enforced by explicit, step-by-step calculation; instead, they represent a nonlinear relationship that must be enforced iteratively.
+
+Traditional aircraft design methodologies (such as the one described in detail by Raymer \cite{raymer}) resolve these implicit relationships with a "guess and check" approach: to "close" any given design, an initial guess is assumed at some point, and the loop is iterated until closure. Mathematically, this is analogous to solving a system of nonlinear equations by Gauss-Seidel iteration\footnote{Another analogue to the "guess-and-check" approach is coordinate descent optimization, which mimics the same pattern of sequential, orthogonal, axis-aligned movement throughout the variable space.}; it is not the worst approach for small problems, but it scales exceptionally poorly to problems with many interacting disciplines. Furthermore, closing these implicit relations via "guess and check" means that we would effectively perform "sub-iterations" at each iteration of our optimization algorithm; this is obviously far from ideal if computational performance is desired. Superior methods of solving this closure problem are implemented in the present work and presented in Section \ref{sect:sand}.
+
+\subsection{The Origins of Coupling}
+
+Coupling between disciplines is not unique to aerospace design, although we claim here that it is generally far more of a challenge in aerospace than in other engineering applications. We posit this hypothesis for two reasons:
+
+\begin{enumerate}
+    \item On a free-flying aerospace system, there is rarely something that can act as a global source or sink for conserved quantities such as mass, momentum, energy, heat, and charge. If we imagine some classical engineering design problems, we observe a similar trend:
+    \begin{itemize}
+        \item The design of a typical cantilevered beam assumes a fixed support
+        \item The design of a typical circuit assumes an electrical ground
+        \item The design of a typical automobile engine assumes some place for heat rejection.
+    \end{itemize}
+    By contrast, aerospace systems have nothing to "push off of": each force and moment must be perfectly balanced with another to achieve steady, level flight. This requirement for balance between disciplines often manifests as a cross-discipline constraint, leading to coupling.
+    \item Aerospace systems often exhibit high performance sensitivities with respect to size, weight, and power. These sensitivities conspire to encourage multifunctional and highly-integrated design. While this design philosophy leads to enhanced performance, it inevitably means that any subsystem's allocation to size, weight, or power comes at the direct expense of another's.
+\end{enumerate}
+
+\section{Summary}
+
+Here, we have discussed several key challenges that are especially prominent in aircraft design optimization:
+
+\begin{enumerate}
+    \item Aerospace systems are inherently dynamic, and hence require careful modeling.
+    \item Aerospace systems are high-dimensional, which precludes the tractable use of many kinds of optimization algortihms.
+    \item Aerospace systems are highly-coupled, which means an optimizer must be scalable to large problems and robust to strong nonlinearities.
+\end{enumerate}
+
+Because of all these challenges, computational aircraft design optimization is a problem where careful algorithmic choices are critical for success.

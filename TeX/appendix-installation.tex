@@ -1,0 +1,54 @@
+\chapter{Installation Instructions and Basic Usage}
+\label{chapter:installation}
+
+AeroSandbox is very lightweight, and it can be installed on any machine running a modern operating system (Windows, Mac, or Linux) in just a few minutes using the following simple steps.
+
+
+\section{Installing Python}
+
+AeroSandbox is a Python package, so an installation of Python is required. AeroSandbox supports Python 3.7 and above, although the latest release is always recommended.
+
+Python can be downloaded and installed from the \url{Python.org} website. However, is is recommended to instead install Python through the \textit{Anaconda Distribution}, a distribution of Python that is popular in the scientific computing community and comes pre-packaged with many performance-optimized libraries \cite{anaconda}. The Anaconda Distribution is free and open-source under their "Individual Edition" and can be downloaded at \url{anaconda.com}.
+
+When installing, it is recommended that you add the Anaconda Python executable (and all other executables in its \texttt{/bin/} binaries folder) to the system \texttt{PATH}. This can be done through a checkbox in the installer, or it can be performed manually after installation.
+
+Finally, correct installation can be verified by opening up a new terminal\footnote{On Windows, Command Prompt is one such terminal.}. If Python has been installed correctly and added to the PATH, you will see a similar printout upon giving the command \mintinline{bash}{python}:
+
+\begin{minted}[breaklines]{text}
+C:\Users\User>python
+Python 3.8.8 | packaged by conda-forge | (default, Feb 20 2021, 15:50:08) [MSC v.1916 64 bit (AMD64)] on win32
+Type "help", "copyright", "credits" or "license" for more information.
+>>>
+\end{minted}
+
+To return to the terminal, you can give the \mintinline{python}{quit()} command.
+
+
+\section{Installing AeroSandbox}
+
+Once Python has been installed, installation of AeroSandbox is very straightforward. Open up a new terminal window and give the following command:
+\begin{minted}{text}
+pip install aerosandbox
+\end{minted}
+
+Assuming the machine has a working internet connection, this will download AeroSandbox from the Python Package Index (PyPI) and install it. This concludes a normal installation.
+
+\section{Basic Usage}
+
+In order to use AeroSandbox, use a text editor or Python IDE\footnote{PyCharm and VSCode being two popular choices} to create a Python script file\footnote{\texttt{.py} file extension}. Code the optimization problem that you would like to solve; an example is given in Listing \ref{listing:constrained-rosen}. After saving the file, call the Python interpreter on this file by giving the following terminal command:
+\begin{minted}{text}
+python "path/to/my/file.py"
+\end{minted}
+
+Alternatively, Python IDEs often have a "Build" or "Run File" command that can execute this code via the Python interpreter as well.
+
+\section{Developer Installation}
+
+For developers, the open-source AeroSandbox GitHub repository is available at \url{https://github.com/peterdsharpe/AeroSandbox}.
+
+Any bugs and installation problems should also be reported via issue tickets at this GitHub repository.
+
+\section{Versioning}
+
+The version of AeroSandbox used in the code listings presented throughout this thesis is v3.x.x. % TODO put in ASB version here
+Because of AeroSandbox's semantic versioning, compatibility is expected for all future AeroSandbox v3.x.x versions; however, this is not guaranteed. Please report any compatibility problems at the aforementioned GitHub repository.

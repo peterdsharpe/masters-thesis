@@ -1,0 +1,61 @@
+\chapter{AeroSandbox: A Differentiable Optimization Framework}
+\label{chapter:aerosandbox}
+
+
+\section{Overview}
+
+In recognition of the challenges with aircraft design optimization described in Chapter \ref{chapter:challenges}, we introduce a new computational framework called \textit{AeroSandbox} (ASB). AeroSandbox is a tool for solving design optimization problems for large, multidisciplinary engineered systems. Examples and data structures tend to focus on aerospace problems, but the underlying numerics are generalizable to aid in the design of any complex engineered system.
+
+AeroSandbox is a collection of interoperable tools that can be grouped into three broad categories, listed here in increasing order of abstraction:
+
+\begin{enumerate}
+    \item \textbf{Core Tools:} An optimization framework that allows for the formulation and solution of engineering problems, and a numerics framework that enables seamless automatic differentiation for efficient gradient computation.
+
+    \item \textbf{Modeling Tools:} Tools for representing geometry (the backbone of engineering design) in an optimizer-friendly format, and tools that aid in creating custom surrogate models for user-defined physics via interpolation or fitting.
+
+    \item \textbf{Discipline-Specific Tools:} Collections of analysis tools aimed at specific aircraft design disciplines, such as aerodynamics, propulsion, and structures. These tools and are typically low- and medium-fidelity analyses (vortex lattice aerodynamics, blade-element propeller modeling, Euler-Bernoulli beam modeling, etc.) that are written from scratch to be optimizer-friendly and modular.
+
+\end{enumerate}
+
+Each category of tools acts as an abstraction layer built upon the foundation below it. Relationships between these various tools are represented visually in Figure \ref{fig:asb-diagram}, which also serves as a good outline for the remainder of this work. All of these tools are described in further detail throughout Chapters \ref{chapter:core}, \ref{chapter:modeling}, and \ref{chapter:discipline}.
+
+% TODO finish writing about structure
+
+\begin{figure}[h]
+    \centerline{\input{figures/asb-diagram.tikz}}
+    \caption{Dependency relationships between \textbf{\textcolor{c1!80!black}{AeroSandbox (ASB) components}} and \textbf{\textcolor{c2!80!black}{external libraries}}. Arrows point toward dependencies.}
+    \label{fig:asb-diagram}
+\end{figure}
+
+
+\section{Implementation Details}
+
+\subsection{Availability}
+
+AeroSandbox is primarily written in Python 3, the lingua franca of scientific computing at the time of writing. It is cross-platform, and distribution via the Python Package Index (PyPI) makes it a one-command installation on all platforms; full installation instructions are available in Appendix \ref{chapter:installation}. The source code is freely available on GitHub\footnote{Available at \url{https://github.com/peterdsharpe/AeroSandbox}} and released under the permissive MIT License\footnote{The MIT License effectively allows any form of noncommercial or commercial use, modification, or redistribution.}.
+
+\subsection{Documentation and Tutorials}
+
+At the time of writing, AeroSandbox is documented in several ways:
+\begin{enumerate}
+    \item A tutorial\footnote{Available at \url{https://github.com/peterdsharpe/AeroSandbox/tree/master/tutorial}} consisting of a series of dozens of Jupyter notebooks introduces the features and syntax of AeroSandbox. Each lesson is incremental and concise, starting with the very basics and gradually building up more complex features. This tutorial can be downloaded and viewed locally in the \texttt{/tutorials/} subdirectory, or it can be viewed online without any downloads.
+    \item A user guide\footnote{Available at \url{https://github.com/peterdsharpe/AeroSandbox/blob/master/aerosandbox/README.md}} provides a comprehensive introduction to the key submodules within AeroSandbox and their relationships. This user guide can be opened at any time from the Python shell with:
+    \begin{minted}{python}
+        import aerosandbox as asb
+        asb.docs()  # Opens the ASB documentation in a web browser.
+    \end{minted}
+    \item Every class and function of AeroSandbox is documented \textit{extensively} inline. At the time of writing, AeroSandbox has a comment:code ratio\footnote{Ratio between number of lines. Ignores blank lines. Counts each Jupyter notebook text paragraph as a single comment line.} of 0.96:1. Documentation can be produced for any AeroSandbox object using syntax analogous to:
+    \begin{minted}{python}
+        import aerosandbox as asb
+        help(asb.Opti)  # Prints documentation for the `Opti` object.
+    \end{minted}
+\end{enumerate}
+
+\subsection{Testing, Versioning, and Reliability}
+\label{sect:testing}
+
+Hundreds of unit tests are written throughout AeroSandbox's code to verify correct functionality. After any code change to the AeroSandbox repository, all of these tests are automatically run\footnote{Continuous integration provided via GitHub Actions} on a new Linux installation to ensure no unintentional breaking changes were made. This process is then repeated for the three most recent versions of the Python interpreter supported by the popular Anaconda distribution for scientific computing with Python \cite{anaconda}.
+
+Upon version increment, upload to distribution servers is also contingent on unit test success. Every effort is made to increment versions in accordance with the principles of \textit{semantic versioning}, where the version number of a new release carries meaningful information about backwards-compatibility at various levels. This ensures that code can be meaningfully version-locked as needed in production environments.
+
+Together, these features make AeroSandbox a reliable codebase for use on real problems "in the wild". This reliability had led to significant adoption, with over 160,000 downloads of AeroSandbox from PyPI at the time of writing.

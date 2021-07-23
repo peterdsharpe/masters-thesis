@@ -1,0 +1,104 @@
+\chapter{Introduction}
+
+
+\section{Engineering Design Optimization}
+
+Optimization is all around us, as it is a formalization of the ubiquitous process of decision-making: "How do we make the best decision with limited resources, under some assumptions and models of the world around us?" Indeed, nearly every designed system in our lives is the result of an optimization process, be it formal or informal.
+
+% The entirety of human technological progress has been a story of incremental optimization, where limited resources are leveraged to do increasing amounts of valuable work within the constraints of physics. % useful work?
+
+In the past century, advances in optimization algorithms and computing have made it tractable to formulate and solve increasingly sophisticated problems within an optimization paradigm. This new lens has fundamentally changed nearly every field of engineering and commerce, and mathematical optimization underlies everything from Google Maps to economic policy to neural networks to aircraft design\footnote{As a colleague once quipped, "optimization is the practice of turning math theorems into money."}. Today, optimization is one of the workhorse tools of scientific computing, and it is one of the problems consuming the most CPU cycles around the world at this very moment. Its practical importance has not gone unnoticed: in a revised list of the "Top Ten Algorithms of the 20th Century" presented by Nick Higham (former SIAM President), optimization claims two distinguished spots\footnote{via Newton/quasi-Newton methods, ranked \#1; and the simplex algorithm, ranked \#9.} \cite{higham2016}.
+
+Optimization is particularly useful in engineering, where design goals naturally lend themselves to this framework. To paraphrase R. John Hansman, the goal of engineering design is to find an \textit{optimal} mapping from a project's \textit{function} to its \textit{form}. Engineers begin the design process by identifying a problem or need, and through conceptualization and optimization they arrive at a physical form that can solve that problem.
+
+\subsection{Configuration and Sizing}
+
+The process of engineering design optimization can be broadly partitioned into two halves, adapting terminology from Raymer \cite{raymer}:
+
+\begin{example}
+    \begin{enumerate}
+        \item \textbf{Configuration}. Configuration involves the qualitative identification of viable solution \textit{archetypes}, and eventually, the optimal topology of the solution. Design choices here are often discrete; for example, aircraft configuration might involve a choice between an airplane and a helicopter, or between propeller and jet propulsion. Colloquially, we ask "what should the system look like?"
+
+        Because this configuration stage is discrete and principally concerned with defining the viable solution space itself, it is a highly creative process best served by human intuition and experience. In general, configuration is not well-served by formal optimization: any attempt at transcribing the configuration problem to a discrete optimization problem requires one to make unnecessary assumptions about the solution space\footnote{Often, this occurs unintentionally. For example, a formal configuration optimization problem might ask "how many wings should the airplane have?", when in reality, the true optimal solution is not an airplane, but a train.}.
+
+        \item \textbf{Sizing}. Sizing forms the other half of design. Here, one assumes a given specific configuration and aims to find the optimal choice of size, weight, and power ("SWaP") for system components. Design choices here are often continuous; for example, aircraft sizing might involve the choice of a wingspan or a desired cruise thrust. Colloquially, we ask "how big should the system be?", or "what is the \textit{best possible version} of the given configuration?"
+
+        When compared with configuration, sizing is a much more quantitative process - in fact, sizing is primarily based on rigorous performance analysis. Because of this, formal optimization methods hold great potential in addressing the sizing problem, and this the domain addressed by the new design framework presented in this thesis.
+
+    \end{enumerate}
+\end{example}
+
+In existing literature, this dichotomy between "configuration" and "sizing" has been addressed most often in the context of early-stage conceptual aircraft design. However, this distinction is not limited to either conceptual design or aerospace applications; all engineering design can be split into configuration (the "what") and sizing (the "how much").
+
+While it may initially seem that sizing is addressed exclusively after a configuration has been selected, the relationship between configuration and sizing is actually quite symbiotic. For example, in order to decide between configurations A and B, one needs to compare the \textit{best} version of configuration A with the \textit{best} version of configuration B; here, a configuration decision depends on the result of a series of sizing studies.
+
+Because of this, any computational tool that aims to aid in solving the quantitative "sizing optimization problem" must seamlessly integrate with the human "configuration design problem". This means that a sizing optimization tool must be fast, accessible, robust, flexible, and accurate enough to allow \textit{interactive design}, a process by which an engineer works in tandem with an optimizer to continuously pose and answer questions in order to understand the design space.
+
+
+\section{The Aircraft Design Problem}
+
+In this work, we focus on developing a new software tool to address the problem of \textit{conceptual aircraft design}, and in particular that of aircraft sizing. Raymer \cite{raymer} provides an excellent summary of the sizing problem:
+
+\begin{example}
+    "To [others], our process of aircraft sizing seems backwards. Most people would assume that we draw a new aircraft design and then determine how far it goes.
+
+    We do it the other way around. We know how far it goes – it goes as far as the requirements say it goes. What we do not know \dots is how big to draw it."
+
+    \begin{flushright}
+        - Raymer \cite{raymer}
+    \end{flushright}
+\end{example}
+
+Here, Raymer makes the crucial observation that sizing (and, in reality, all aircraft design) is intrinsically driven by requirements. As the requirements change, the optimal design does too; sizing is a dynamic process.
+
+Raymer also begins to hint at a distinction between the forward problem and the inverse problem, and the relative utility of these approaches. It is an unfortunate but necessary reality that the majority of engineering education focuses on the \textit{forward problem}, also termed "analysis" or "simulation": "Given some design, what performance is achieved?" In real-world practice, it is often far more useful to turn the problem around and work with the \textit{inverse problem}, also termed "design" or "optimization": "Given some required performance, what does the design look like?" Indeed, engineering design at its core is an inverse problem, not a forward one.
+
+\subsection{A Canonical Design Problem}
+
+Because problem formulation is by far the most important step of any optimization problem, it is instructive to give a canonical example of the sizing problem before discussing methods to solve it.
+
+The sizing problem can be made more quantitative via formulation within a standard mathematical optimization framework. The sizing problem is generally representable as a continuous nonlinear program (NLP) of the form:
+
+\begin{mini}
+    |l|
+        {\vec{x}}{J(\vec{x})}
+        {}{}
+    \addConstraint{\vec{g}(\vec{x}) \geq 0}
+    \addConstraint{\vec{h}(\vec{x}) = 0}
+    \label{eq:nlp-formulation}
+\end{mini}
+
+This standard-form mathematical optimization problem consists of a few key elements: variables, objective, constraints, and parameters. We typically map the given inputs to the sizing problem to these elements as follows. Canonical examples of each formulation element are presented, as might be applicable to the design of an aerospace system.
+
+\begin{enumerate}
+    \item \textbf{Variables $\vec{x}$}. The degrees of freedom in the system, or the quantities that are used to describe any particular design in the chosen parameterization. The number of independent variables sets the dimensionality of the design space.
+
+    Canonical examples include variables parameterizing the vehicle's outer mold line (OML), propulsion sizing, mechanism design. For mission-driven optimization, variables parameterizing the vehicle's state and control inputs over time throughout the nominal mission might be included here as well.
+
+    \item \textbf{Objective function $J(\vec{x})$}. The design objective or performance metric, expressed as a quantity that is to be minimized.
+
+    Canonical examples include size, weight, power, and cost. If the quantity is to be maximized (e.g. range), the quantity is negated in order to convert the problem into a standard-form minimization problem.
+
+    \item \textbf{Constraints $\vec{g}(\vec{x}) \geq 0, \vec{h}(\vec{x}) = 0$}. Constraints bound the feasible space. Constraints are typically drawn from two sources: physical models and given requirements. Because of this, constraints tend to be the most interesting part of a design optimization problem as they encode the vast majority of problem information.
+
+    A problem may contain both active\footnote{also referred to in some literature as "tight" or "driving"} constraints and inactive constraints. Active constraints are those that limit the objective function at the optimal point. Each constraint is associated a dual variable that effectively quantifies the sensitivity of the objective to an incremental scalar addition to one side of the constraint; for active constraints, this sensitivity is nonzero by definition. % TODO review definition
+
+    Equality constraints can be thought of as a dimensionality reduction of the design space: adding an equality constraint effectively projects the design space onto the hypersurface that satisfies that equation.
+
+    \item \textbf{Parameters}. Parameters typically represent mutable assumptions embedded within the objective function or constraints. Parameters are quantities that an engineer might later perform a sweep over in order to study the feasible space under varying assumptions.
+
+    Canonical examples might include technology factors (e.g. battery specific energy), economic factors (e.g. fuel specific cost), risk metrics (e.g. structural factor of safety over design loads), or mission requirements (e.g. required range).
+
+\end{enumerate}
+
+In this work, we present a new computational framework for solving this aircraft design optimization problem based on modern advances in optimization methods. Chapter \ref{chapter:challenges} motivates the need for a specialized, high-performance optimization framework for aircraft design. Chapter \ref{chapter:aerosandbox} introduces the central contribution of this thesis: a new optimization framework. Chapters \ref{chapter:core}, \ref{chapter:modeling}, and \ref{chapter:discipline} elaborate more on various components of this framework, with each new chapter adding a level of abstraction that build upon previous work. Finally, Chapters \ref{chapter:firefly} and \ref{chapter:dawn} are aircraft design case studies that serve to illustrate specific features of this new framework and the framework's applicability to real problems. % TODO review chapter summary for correctness
+
+% TODO finish up thoughts
+
+%\section{Existing Approaches}
+%
+%\subsection{GPKit}
+%
+%\subsection{SUAVE}
+%
+%\subsection{OpenMDAO}

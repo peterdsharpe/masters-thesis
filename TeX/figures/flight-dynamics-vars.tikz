@@ -1,0 +1,55 @@
+
+\tikzstyle{n1} = [rectangle, draw=c1, thick, fill=c1!20, text width=10em, text centered, rounded corners, minimum height=2em]
+\tikzstyle{n2} = [rectangle, draw=c2, thick, fill=c2!20, text width=10em, text centered, rounded corners, minimum height=2em]
+\tikzstyle{line} = [draw, thick, ->, shorten >=2pt]
+
+\begin{tikzpicture} [
+    auto,
+    node distance = 1.6cm,
+]
+    
+    \providecommand\ntxt{}
+    \renewcommand{\ntxt}[2]{
+        \textbf{#1}\\#2
+    }
+    
+    \node (pos) [n1] {\ntxt{Position}{$x_e, y_e, z_e$}};
+    \node (ori) [n1, below of=pos] {\ntxt{Orientation}{$\phi, \theta, \psi$}};
+    \node (vel) [n1, below of=ori] {\ntxt{Velocity}{$u_e, v_e, w_e$}};
+    \node (avl) [n1, below of=vel] {\ntxt{Angular Velocity}{$\dot\phi, \dot\theta, \dot\psi$}};
+    \node (t) [n2, below of=avl, yshift=-1.2cm, fill=c2!5, draw=c2!20, text width=30em] {
+        \begin{eqexpl}
+            \item{$()_e$} Relative to Earth
+            \item{$\dot{()}$} Derivative with respect to time
+            \item{$\phi, \theta, \psi$} Roll, pitch, and yaw angle, respectively
+            \item{$x_e$} Downrange distance
+            \item{$y_e$} Cross-track distance
+            \item{$z_e$} Altitude
+        \end{eqexpl}
+    };
+
+%    \node (opti) [int] {\nitem{ASB Core: \texttt{Opti} Stack}{Optimization interface}};
+%    \node (num) [int, right of=opti, xshift=2cm] {\nitem{ASB Core: Numerics}{Unified numerics stack}};
+%    \node (cas) [ext, below of=opti] {\nitem{CasADi \cite{casadi}}{Automatic differentiation layer}};
+%    \node (numpy) [ext, below of=num] {\nitem{NumPy \cite{numpy}}{Non-differentiated numerics}};
+%    \node (ipopt) [ext, below of=cas] {\nitem{IPOPT \cite{ipopt}}{Optimizer}};
+%    \node (geom) [int, above of=num] {\nitem{ASB Geometry Stack}{}};
+%    \node (surr) [int, above of=opti] {\nitem{ASB Surrogate Modeling Tools}{}};
+%    \node (disc) [int, above of=surr, xshift=2.5cm] {\nitem{ASB Discipline-Specific Tools}{}};
+%
+%    % connect all nodes defined above
+%    \begin{scope} [every path/.style=line]
+%        \path (disc) -- (geom);
+%        \path (disc) edge[out=180, in=180] (opti);
+%        \path (disc) edge[out=0, in=0] (num);
+%        \path (surr) -- (opti);
+%        \path (surr) -- (num);
+%        \path (geom) -- (num);
+%        \path (opti) -- (cas);
+%        \path (num) -- (cas);
+%        \path (num) -- (numpy);
+%        \path (cas) -- (ipopt);
+%        \path (opti) -- (num);
+%    \end{scope}
+
+\end{tikzpicture}

@@ -1,0 +1,288 @@
+\chapter{Addenda, Derivations, and Extended Code}
+
+
+\section{Constrained Rosenbrock Problem}
+\label{sect:rosen-derivation}
+Here, we derive a closed-form solution to the constrained Rosenbrock problem, restated from Eq. \ref{eq:constrained-rosenbrock} as:
+
+\begin{mini}
+    |l|
+        {x, y}{(1-x)^2 + 100 (y - x^2)^2}
+        {}{}
+    \addConstraint{x^2 + y^2 \leq 1}
+\end{mini}
+
+The objective function, which we denote $f(x, y)$ is shown in Figure \ref{fig:unconstrained-rosen}; the constraint limits the feasible region to the unit ball.
+
+\begin{figure}[H]
+    \centering
+    \ifdraft{}{\input{figures/rosen.pgf}}
+    \caption{Rosenbrock Function}
+    \label{fig:unconstrained-rosen}
+\end{figure}
+
+
+We find the gradient of $f$ to be:
+
+\begin{equation}
+    \nabla f =
+    \begin{bmatrix}
+        \diff{f}{x} \\
+        \diff{f}{y}
+    \end{bmatrix} =
+    \begin{bmatrix}
+        400x(x^2 - y) + 2x - 2 \\
+        -200x^2 + 200y
+    \end{bmatrix}
+\end{equation}
+
+Ignoring the constraint to begin, we find the unconstrained critical points by setting $\nabla f = \vec{0}$. Thus, the $\diff{f}{y}=0$ condition yields $x^2 = y$, which is substituted into the remaining equation to yield:
+
+\begin{equation}
+    400x(y-y)+2x-2 = 0 \implies 2x-2 = 0 \implies x=1
+\end{equation}
+
+Given $x=1$, the $\diff{f}{y}=0$ conditions implies $y=1$. Thus, $(x, y) = (1, 1)$ is the only critical point of the unconstrained problem.\footnote{Further analysis or graphical inspection reveals this to be the global minimum of the unconstrained problem.}
+
+Thus, the only critical point for the unconstrained problem lies outside the feasible region. The complementary slackness optimality condition implies that criticality ($\nabla f = 0$ locally) is a requirement for optimality in the absence of an active constraint. Thus, we infer that the constrained optimum must lie on the constraint boundary and that the constraint have a nonzero associated dual variable.
+
+We now prepare to formulate and directly solve optimality conditions including the constraint using the KKT conditions. We first rewrite the constraint in the form $g(x) \leq 0$, where here, $g(x) = x^2+y^2-1$. The constraint gradient is then:
+
+\begin{equation}
+    \nabla g =
+    \begin{bmatrix}
+        2x \\
+        2y
+    \end{bmatrix}
+\end{equation}
+
+Now, the optimality conditions can be formed. For the unknowns $x, y, \lambda$, we obtain a set of two equations from the stationarity requirement of the Lagrangian:
+
+\begin{equation}
+    \nabla f + \lambda \nabla g(x) = \vec{0}
+\end{equation}
+
+A third equation comes from the constraint itself, which we now know to be tight:
+
+\begin{equation}
+    g(x) = 0
+\end{equation}
+
+This system of three equations does not readily admit an analytic solution, but a numerical solution can be easily obtained:
+
+\begin{equation}
+    x = 0.7864, y = 0.6177, \lambda = 0.1215
+    \label{eq:constrained-rosen-solution}
+\end{equation}
+
+Finally, we can illustrate the poor scaling in this problem by evaluating the condition number of the Hessian at the optimum. The Hessian matrix of the objective function is found to be:
+
+\begin{equation}
+    \mat{H} =
+    \begin{bmatrix}
+        \ddiff{f}{x} & \ddiffm{f}{x}{y} \\
+        \ddiffm{f}{x}{y} & \ddiff{f}{y}
+    \end{bmatrix} =
+    \begin{bmatrix}
+        1200x^2 - 400y + 2 & -400x \\
+        -400x & 200
+    \end{bmatrix}
+\end{equation}
+
+Which, evaluated at the optimum of $(x, y) = (0.7864, 0.6177)$ yields:
+
+\begin{equation}
+    \mat{H} \approx
+    \begin{bmatrix}
+        497 & -315 \\
+        -315 & 200
+    \end{bmatrix}
+\end{equation}
+
+After eigenvalue factorization, we evaluate the condition number to find:
+
+\begin{equation}
+    \mathrm{cond}(\mat{H}) \approx 1054
+\end{equation}
+
+
+\section{Simple Wing}
+\label{sect:simple-wing-code}
+
+The Simple Wing problem described in Section \ref{sect:simple-wing} can be solved using the following AeroSandbox code:
+
+\begin{minted}{python}
+
+import aerosandbox as asb
+import aerosandbox.numpy as np
+
+### Constants
+form_factor = 1.2  # form factor [-]
+oswalds_efficiency = 0.95  # Oswald efficiency factor [-]
+viscosity = 1.78e-5  # viscosity of air [kg/m/s]
+density = 1.23  # density of air [kg/m^3]
+airfoil_thickness_fraction = 0.12  # airfoil thickness to chord ratio [-]
+ultimate_load_factor = 3.8  # ultimate load factor [-]
+airspeed_takeoff = 22  # takeoff speed [m/s]
+CL_max = 1.5  # max CL with flaps down [-]
+wetted_area_ratio = 2.05  # wetted area ratio [-]
+W_W_coeff1 = 8.71e-5  # Wing Weight Coefficient 1 [1/m]
+W_W_coeff2 = 45.24  # Wing Weight Coefficient 2 [Pa]
+drag_area_fuselage = 0.031  # fuselage drag area [m^2]
+weight_fuselage = 4940.0  # aircraft weight excluding wing [N]
+
+opti = asb.Opti()  # initialize an optimization environment
+
+### Variables
+aspect_ratio = opti.variable(init_guess=10)  # aspect ratio
+wing_area = opti.variable(init_guess=10)  # total wing area [m^2]
+airspeed = opti.variable(init_guess=100)  # cruising speed [m/s]
+weight = opti.variable(init_guess=10000)  # total aircraft weight [N]
+CL = opti.variable(init_guess=1)  # Lift coefficient of wing [-]
+
+### Models
+# Aerodynamics model
+CD_fuselage = drag_area_fuselage / wing_area
+Re = (density / viscosity) * airspeed * (wing_area / aspect_ratio) ** 0.5
+Cf = 0.074 / Re ** 0.2
+CD_profile = form_factor * Cf * wetted_area_ratio
+CD_induced = CL ** 2 / (np.pi * aspect_ratio * oswalds_efficiency)
+CD = CD_fuselage + CD_profile + CD_induced
+dynamic_pressure = 0.5 * density * airspeed ** 2
+drag = dynamic_pressure * wing_area * CD
+lift_cruise = dynamic_pressure * wing_area * CL
+lift_takeoff = 0.5 * density * wing_area * CL_max * airspeed_takeoff ** 2
+
+# Wing weight model
+weight_wing_structural = W_W_coeff1 * (
+        ultimate_load_factor * aspect_ratio ** 1.5 *
+        (weight_fuselage * weight * wing_area) ** 0.5
+) / airfoil_thickness_fraction
+weight_wing_surface = W_W_coeff2 * wing_area
+weight_wing = weight_wing_surface + weight_wing_structural
+
+### Constraints
+opti.subject_to([
+    weight <= lift_cruise,
+    weight <= lift_takeoff,
+    weight == weight_fuselage + weight_wing
+])
+
+### Objective
+opti.minimize(drag)
+
+sol = opti.solve()
+
+\end{minted}
+
+
+\section{Simple Aircraft (SimpleAC)}
+\label{sect:simpleac-code}
+
+The Simple Aircraft (SimpleAC) problem described in Section \ref{sect:simpleac} can be solved using the following AeroSandbox code:
+
+\begin{minted}{python}
+
+import aerosandbox as asb
+import aerosandbox.numpy as np
+
+opti = asb.Opti()
+
+### Env. constants
+g = 9.81  # gravitational acceleration, m/s^2
+mu = 1.775e-5  # viscosity of air, kg/m/s
+rho = 1.23  # density of air, kg/m^3
+rho_f = 817  # density of fuel, kg/m^3
+
+### Non-dimensional constants
+C_Lmax = 1.6  # stall CL
+e = 0.92  # Oswald's efficiency factor
+k = 1.17  # form factor
+N_ult = 3.3  # ultimate load factor
+S_wetratio = 2.075  # wetted area ratio
+tau = 0.12  # airfoil thickness to chord ratio
+W_W_coeff1 = 2e-5  # wing weight coefficient 1
+W_W_coeff2 = 60  # wing weight coefficient 2
+
+### Dimensional constants
+Range = 1000e3  # aircraft range, m
+TSFC = 0.6 / 3600  # thrust specific fuel consumption, 1/sec
+V_min = 25  # takeoff speed, m/s
+W_0 = 6250  # aircraft weight excluding wing, N
+
+### Free variables (same as SimPleAC, with extraneous variables removed)
+AR = opti.variable(init_guess=10, log_transform=True)  # aspect ratio
+S = opti.variable(init_guess=10, log_transform=True)  # total wing area, m^2
+V = opti.variable(init_guess=100, log_transform=True)  # cruise speed, m/s
+W = opti.variable(init_guess=10000, log_transform=True)  # total aircraft weight, N
+C_L = opti.variable(init_guess=1, log_transform=True)  # lift coefficient
+W_f = opti.variable(init_guess=3000, log_transform=True)  # fuel weight, N
+V_f_fuse = opti.variable(init_guess=1, log_transform=True)  # fuel volume in the fuselage, m^3
+
+### Wing weight
+W_w_surf = W_W_coeff2 * S
+W_w_strc = W_W_coeff1 / tau * N_ult * AR ** 1.5 * np.sqrt(
+    (W_0 + V_f_fuse * g * rho_f) * W * S
+)
+W_w = W_w_surf + W_w_strc
+
+### Entire weight
+opti.subject_to(W >= W_0 + W_w + W_f)
+
+### Lift equals weight constraint
+opti.subject_to([
+    W_0 + W_w + 0.5 * W_f <= 0.5 * rho * S * C_L * V ** 2,
+    W <= 0.5 * rho * S * C_Lmax * V_min ** 2,
+])
+
+### Flight duration
+T_flight = Range / V
+
+### Drag
+Re = (rho / mu) * V * (S / AR) ** 0.5
+C_f = 0.074 / Re ** 0.2
+
+CDA0 = V_f_fuse / 10
+
+C_D_fuse = CDA0 / S
+C_D_wpar = k * C_f * S_wetratio
+C_D_ind = C_L ** 2 / (np.pi * AR * e)
+C_D = C_D_fuse + C_D_wpar + C_D_ind
+D = 0.5 * rho * S * C_D * V ** 2
+
+opti.subject_to(W_f >= TSFC * T_flight * D)
+
+V_f = W_f / g / rho_f
+V_f_wing = 0.03 * S ** 1.5 / AR ** 0.5 * tau
+
+V_f_avail = V_f_wing + V_f_fuse
+
+opti.subject_to(V_f_avail >= V_f)
+
+opti.minimize(W_f)
+
+sol = opti.solve()
+
+\end{minted}
+
+\section{Discontinuities at Non-Optimal Points}
+\label{sect:discontinuities-at-non-optimal}
+
+Continuing from Section \ref{sect:differentiability}, we note that discontinuity and non-differentiability is still admissible if it does not occur at the optimum. For example, we can pose the following problem, which has countably infinite non-continuous, non-differentiable points:
+
+\begin{mini}
+    |l|
+        {x}{x \cdot \left\lfloor x + \frac{1}{2} \right\rfloor + \frac{1}{10} x^2}
+        {}{}
+    \label{eq:nondiff}
+\end{mini}
+
+\noindent
+where the objective function and its derivative are visualized in Figure \ref{fig:nondiff}. This problem is easily solved as-written in AeroSandbox, because the region surrounding the optimum ($x=0$, $f(x)=0$) is locally $C_1$-continuous. Convergence is easily achieved even if the initial guess is one of these discontinuous points: with an initial guess of $x_0=10.5$, solution is achieved in just 6 iterations.
+
+\begin{figure}[H]
+    \centering
+    \input{figures/nondiff.pgf}
+    \caption{Illustration of the function in Eq. \ref{eq:nondiff}, which exhibits an infinite number of discontinuities in value and derivative.}
+    \label{fig:nondiff}
+\end{figure}
