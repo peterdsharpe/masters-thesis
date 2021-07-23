@@ -9,7 +9,7 @@ define pdfbuild
 	-interaction=nonstopmode \
 	-synctex=1 \
 	-output-format=pdf \
-	"-output-directory=C:/Users/User/Dropbox (MIT)/School/Grad School/2021 Spring/Thesis/out" \
+	"-output-directory=C:\GitHub\masters-thesis\out" \
 	main.tex
 endef
 
