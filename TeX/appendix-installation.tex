@@ -8,7 +8,7 @@ AeroSandbox is very lightweight, and it can be installed on any machine running 
 
 AeroSandbox is a Python package, so an installation of Python is required. AeroSandbox supports Python 3.7 and above, although the latest release is always recommended.
 
-Python can be downloaded and installed from the \url{Python.org} website. However, is is recommended to instead install Python through the \textit{Anaconda Distribution}, a distribution of Python that is popular in the scientific computing community and comes pre-packaged with many performance-optimized libraries \cite{anaconda}. The Anaconda Distribution is free and open-source under their "Individual Edition" and can be downloaded at \url{anaconda.com}.
+Python can be downloaded and installed from the \url{Python.org} website. However, is is recommended to instead install Python through the \textit{Anaconda Distribution}, a distribution of Python that is popular in the scientific computing community and comes pre-packaged with many performance-optimized libraries \cite{anaconda}. The Anaconda Distribution is free and open-source for individual use and can be downloaded from the \url{Anaconda.com} website.
 
 When installing, it is recommended that you add the Anaconda Python executable (and all other executables in its \texttt{/bin/} binaries folder) to the system \texttt{PATH}. This can be done through a checkbox in the installer, or it can be performed manually after installation.
 
@@ -33,6 +33,7 @@ pip install aerosandbox
 
 Assuming the machine has a working internet connection, this will download AeroSandbox from the Python Package Index (PyPI) and install it. This concludes a normal installation.
 
+
 \section{Basic Usage}
 
 In order to use AeroSandbox, use a text editor or Python IDE\footnote{PyCharm and VSCode being two popular choices} to create a Python script file\footnote{\texttt{.py} file extension}. Code the optimization problem that you would like to solve; an example is given in Listing \ref{listing:constrained-rosen}. After saving the file, call the Python interpreter on this file by giving the following terminal command:
@@ -42,13 +43,23 @@ python "path/to/my/file.py"
 
 Alternatively, Python IDEs often have a "Build" or "Run File" command that can execute this code via the Python interpreter as well.
 
+
 \section{Developer Installation}
 
 For developers, the open-source AeroSandbox GitHub repository is available at \url{https://github.com/peterdsharpe/AeroSandbox}.
 
 Any bugs and installation problems should also be reported via issue tickets at this GitHub repository.
 
+
 \section{Versioning}
 
-The version of AeroSandbox used in the code listings presented throughout this thesis is v3.x.x. % TODO put in ASB version here
-Because of AeroSandbox's semantic versioning, compatibility is expected for all future AeroSandbox v3.x.x versions; however, this is not guaranteed. Please report any compatibility problems at the aforementioned GitHub repository.
+The version of AeroSandbox used in the code listings presented throughout this thesis is v3.0.17. Because of AeroSandbox's semantic versioning, compatibility is expected for all future AeroSandbox v3.x.x versions.
+
+The version of a user installation can be checked at any time with the following Python code:
+
+\begin{minted}{python}
+import aerosandbox as asb
+print(asb.__version__)
+\end{minted}
+
+Please report any compatibility problems at the aforementioned GitHub repository.
