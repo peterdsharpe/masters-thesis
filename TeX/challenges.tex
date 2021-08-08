@@ -177,7 +177,7 @@ With this decomposition, we eliminate one more state variable, as $\alpha(t)$ is
     \label{eq:fd-vars-simp}
 \end{equation}
 
-In numerical schemes, the two velocity variables $u_e, w_e$ are often instead parameterized as airspeed $V(t)$ and flight path angle $\gamma(t)$. This is because the $V$-$\gamma$ velocity parameterization tends to be more energy-conserving upon numerical ODE integration than the Cartesian parameterization\footnote{For simplicity here, ambient wind speed is assumed to be zero, so $V = \sqrt{u_e^2 + w_e^2}$. Nonzero wind is discussed in Section \ref{sect:dawn-wind}.}, as $V(t)$ maps directly onto vehicle kinetic energy. % TODO add section where wind is discussed
+In numerical schemes, the two velocity variables $u_e, w_e$ are often instead parameterized as airspeed $V(t)$ and flight path angle $\gamma(t)$. This is because the $V$-$\gamma$ velocity parameterization tends to be more energy-conserving upon numerical ODE integration than the Cartesian parameterization\footnote{For simplicity here, ambient wind speed is assumed to be zero, so $V = \sqrt{u_e^2 + w_e^2}$.}, as $V(t)$ maps directly onto vehicle kinetic energy. % TODO add section where wind is discussed
 
 \subsubsection{Trajectory Optimization, Transcription, and Discretization}
 \label{sect:dynamics-parameterization}

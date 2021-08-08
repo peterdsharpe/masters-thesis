@@ -328,7 +328,7 @@ We can quantify this scaling by solving this same $n$-dimensional problem for va
     \item The cost of a single objective function evaluation scales as $\order(n)$ due to the length of the vectors being operated on.
     \item The cost of a single gradient evaluation is proportional to the cost of a function evaluation regardless of $n$, thanks to reverse-mode automatic differentiation. This means that gradient evaluation is also $\order(n)$. (With a finite-difference method, this would be $\order(n^2)$.)
     \item The number of iterations required for convergence is roughly independent of the problem dimensionality.
-    \item A small overhead cost (here, $\approx 14$ milliseconds) is associated with interfacing with IPOPT. For repeated optimization runs (as in the case of a parametric design study), this cost can be eliminated as described in Section \ref{sect:sweep}. % TODO make link to sweep section
+    \item A small overhead cost (here, $\approx 14$ milliseconds) is associated with interfacing with IPOPT. For repeated optimization runs (as in the case of a parametric design study), this cost can be eliminated through preservation of the computational graph. % as described in Section \ref{sect:sweep}. % TODO make link to sweep section
 \end{itemize}
 
 \begin{figure}[H]
@@ -575,7 +575,7 @@ A stark difference is also seen in terms of wall-clock time to solve, as present
 
 Another transformation that can be easily employed in AeroSandbox is log-transformation. Log-transformation is the process of applying a logarithm to a variable before passing it to the optimizer, such that the algorithm optimizes the quantity $\ln(x)$ rather than $x$. (The same can also be done to constraints and objectives.)
 
-Log-transformation for engineering design optimization was extensively studied by Boyd \cite{cvxbook}, with subsequent applications by Hoburg \cite{hoburg}, Ozturk \cite{Ozturk2018}, Kirschen \cite{kirschen}, and many others. The mathematical rationale behind log-transformation is that certain types of expressions\footnote{Known as \textit{monomial} and \textit{posynomial} expressions, as defined in \cite{hoburg}} that sometimes appear in engineering problems can be guaranteed to become convex under log-transformation. This approach, when taken to the extreme, results in \textit{geometric programming} (GP); a broad comparison of GP with AeroSandbox's more general approach is given in Section \ref{sect:compare}.
+Log-transformation for engineering design optimization was extensively studied by Boyd \cite{cvxbook}, with subsequent applications by Hoburg \cite{hoburg}, Ozturk \cite{Ozturk2018}, Kirschen \cite{kirschen}, and many others. The mathematical rationale behind log-transformation is that certain types of expressions\footnote{Known as \textit{monomial} and \textit{posynomial} expressions, as defined in \cite{hoburg}} that sometimes appear in engineering problems can be guaranteed to become convex under log-transformation. This approach, when taken to the extreme, results in \textit{geometric programming} (GP).%; a broad comparison of GP with AeroSandbox's more general approach is given in Section \ref{sect:compare}.
 
 In the context of a general NLP framework like AeroSandbox, the usefulness of log-transformation can vary widely problem-to-problem. Here, we make some general observations about the pros and cons of this technique:
 
@@ -785,7 +785,8 @@ Although these black-box models cannot be used as-is, there are still several wo
 
 \begin{itemize}
     \item \textbf{Surrogate modeling:} Instead of directly using the black-box model, we draw samples from the model that are then used to construct a differentiable surrogate model. This approach is tractable when the input space of the black-box model can be \textit{well-sampled}. Specifically, this works well when the model's input dimensionality, runtime, and nonlinearity are relatively low. Surrogate modeling approaches are highly integrated into AeroSandbox; popular surrogate modeling techniques such as fitting and interpolation are discussed in Chapter \ref{chapter:modeling}.
-    \item \textbf{Rewrite the code:} For simpler black-box models, it is often possible to re-write these models from scratch in AeroSandbox syntax, allowing them to be directly integrated into the code. This is often less daunting of a task than it may initially appear, as demonstrated with many examples in Chapter \ref{chapter:discipline}.
+    \item \textbf{Rewrite the code:} For simpler black-box models, it is often possible to re-write these models from scratch in AeroSandbox syntax, allowing them to be directly integrated into the code.
+    %This is often less daunting of a task than it may initially appear, as demonstrated with many examples in Chapter \ref{chapter:discipline}.
     \item Future work aims to integrate black-box modeling into AeroSandbox via finite differencing or a user-provided gradient. This is described more in Section \ref{sect:future-work-black-box}.
 \end{itemize}
 
