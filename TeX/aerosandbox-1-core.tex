@@ -25,7 +25,7 @@ Yet another reason that IPOPT is an attractive choice of optimizer is that it gr
 
 % TODO link to example constraint jacobian
 
-One drawback of using IPOPT is that, unlike most interior-point optimziation algorithms, intermediate iterates do not necessarily stay feasible, even if the initial guess is feasible. This is demonstrated in Lyu et al., where the Rosenbrock example using IPOPT shows infeasible intermediate iterates\footnote{Of course, the algorithm quickly returns to the feasible space and terminates at a point that is both feasible and optimal.} despite a feasible start \cite{lyu2014}. One implication of this attribute is that physics models used in AeroSandbox should \textit{extrapolate sensibly}: physically-plausible (even if not strictly-speaking correct) results should be returned for any design variable inputs; regardless of feasibility. This increases the likelihood that the associated gradient information at the iterate will send subsequent iterates back to the feasible space.
+One drawback of using IPOPT is that, unlike most interior-point optimization algorithms, intermediate iterates do not necessarily stay feasible, even if the initial guess is feasible. This is demonstrated in Lyu et al., where the Rosenbrock example using IPOPT shows infeasible intermediate iterates\footnote{Of course, the algorithm quickly returns to the feasible space and terminates at a point that is both feasible and optimal.} despite a feasible start \cite{lyu2014}. One implication of this attribute is that physics models used in AeroSandbox should \textit{extrapolate sensibly}: physically-plausible (even if not strictly-speaking correct) results should be returned for any design variable inputs; regardless of feasibility. This increases the likelihood that the associated gradient information at the iterate will send subsequent iterates back to the feasible space.
 
 \subsection{Automatic Differentiation for Efficient Derivatives}
 \label{sect:ad}
@@ -62,7 +62,7 @@ This calculation is then repeated for each of the $n$ directions, at which point
     \end{bmatrix}
 \end{equation}
 
-The finite-difference method has the significant advantage that $f(\vec{x})$ can be any \textit{black-box function}; that is, no information needs to be known about the inner workings of the function in order to compute a derivative with this method. This makes finite-differencing an excellent "last-resort" method when other, more sophisticated methods fail. However, there are also several catastrophic drawbacks with finite-differencing.
+The finite-difference method has the significant advantage that $f(\vec{x})$ can be any \textit{black-box function}; that is, no information needs to be known about the inner workings of the function in order to compute a derivative with this method. This makes finite-differencing an excellent "last-resort" method when other, more sophisticated methods fail. However, there are also several severe drawbacks with finite-differencing.
 
 The most significant drawback is that finite differencing scales extremely poorly to gradient computation of high-dimensional functions, such as those that often occur in aircraft design. For a function $f(\vec{x}): \R^n \to \R^1$, gradient computation requires $n$ evaluations of Equation \ref{eq:fd}. Of course, the $f(\vec{x}_0)$ term can be reused after the first evaluation, but the $f(\vec{x}_0+h\hat{e}_i)$ term must be evaluated $n$ times. Thus, every gradient computation requires $n+1$ evaluations of the function $f$, leading to $\order(n)$ time scaling.
 
@@ -201,7 +201,7 @@ Because of these reasons, automatic differentiation\footnote{primarily reverse-m
 
 \section{Syntax and Mathematical Examples}
 
-In order to solve a problem with AeroSandbox, one first creates an empty optimization environment by instantiating this \opti\ class. After creating this class instance, one can declare variables, constraints, and parameters in arbitrary order. Upon calling the \mintinline{python}{Opti.solve()} method, these problem elements are automatically differentiated as-needed, constructed into a standard-form nonlinear program, solved via an interface to IPOPT, and returned to the user.
+In order to solve a design optimization problem with AeroSandbox, one first creates an empty optimization environment by instantiating this \opti\ class. After creating this class instance, one can declare variables, constraints, and parameters in arbitrary order. Upon calling the \mintinline{python}{Opti.solve()} method, these problem elements are automatically differentiated as-needed, constructed into a standard-form nonlinear program, solved via an interface to IPOPT, and returned to the user.
 
 Despite the sophisticated inner workings of AeroSandbox's \opti\ stack, an extensive effort has been made to abstract these details away from the user unless requested; sensible defaults and heuristics are used throughout AeroSandbox to make usage as easy as possible. For advanced users, it is useful to note that AeroSandbox's \opti\ class inherits and extends the corresponding \opti\ class from CasADi; more sophisticated optimization settings can be accessed directly through syntax shared with CasADi as needed.
 
@@ -301,7 +301,7 @@ N = 5000
 
 opti = asb.Opti()  # Create an optimization environment.
 
-x = opti.variable(init_guess=4 * np.ones(shape=N))  # Create a vectorized variable $x$.
+x = opti.variable(init_guess=4 * np.ones(shape=N))  # Create a vector variable $x$ of length $N$.
 
 x1 = x[:-1]  #  Effectively $x_i$
 x2 = x[1:]   #  Effectively $x_{i+1}$
@@ -318,9 +318,9 @@ x_opt = sol.value(x)  # Extract the solution.
     \label{listing:nd-rosen}
 \end{listing}
 
-The correct solution of $\vec{x} = [1, 1, \dots 1]$ is found after just 25 iterations. Querying this solution further, we find that our objective function was evaluated 49 times\footnote{More than one function evaluation may occur per iteration as a result of the line search that occurs at each iteration.}. It is instructive to consider that we have effectively found the zero of the $5000$-dimensional function $\pdiff{f}{\vec{x}}$ with only 49 function evaluations, a feat that initially seems to violate some arcane principle of information theory. This apparent paradox is resolved by noticing that the gradient evaluation via reverse-mode automatic differentiation contributes $5000$ pieces of information for each pass through the computational graph. This empirically demonstrates why efficient gradient computation is the key to fast optimization: each pass through the computational graph gives us orders of magnitude more useful information than a single function evaluation.
+The correct solution of $\vec{x} = [1, 1, \dots 1]$ is found after just 25 iterations. Querying this solution further, we find that our objective function was evaluated 49 times\footnote{More than one function evaluation may occur per iteration as a result of the line search that occurs at each iteration.}. It is instructive to consider that we have effectively found the zero of the 5,000-dimensional nonlinear function $\pdiff{f}{\vec{x}}$ with only 49 function evaluations, a feat that initially seems to violate information theory - how do 49 evaluations give enough information to solve 5,000 equations? This apparent paradox is resolved by noticing that the gradient evaluation via reverse-mode automatic differentiation contributes 5,000 pieces of information for each pass through the computational graph. This empirically demonstrates why efficient gradient computation is the key to fast optimization: each pass through the computational graph gives us orders of magnitude more useful information than a single function evaluation.
 
-We make particular note of the \textit{speed} of solving this problem, recalling that the problem is a nonlinear, nonconvex optimization problem of $5000$ variables. Despite this, on a single workstation laptop\footnote{Intel i7-8750H CPU, Windows 10}, AeroSandbox solves this problem in just 0.284 seconds.
+We make particular note of the \textit{speed} of solving this problem, recalling that the problem is a nonlinear, nonconvex optimization problem of 5,000 variables. Despite this, on a single workstation laptop\footnote{Intel i7-8750H CPU, Windows 10}, AeroSandbox solves this problem in just 0.284 seconds.
 
 We can quantify this scaling by solving this same $n$-dimensional problem for various $n$, as shown in Figure \ref{fig:nd-rosen}. We notice here that the asymptotic time complexity is (empirically) roughly $\order(n^{0.9})$, indicating sublinear scaling with respect to dimensionality. We can identify several factors that contribute to the sublinear scaling curve seen in Figure \ref{fig:nd-rosen}:
 
@@ -436,7 +436,7 @@ A common concern for any optimizer when working with practical problems is its r
 
 For example, Kirschen and Hoburg found that various general NLP solvers performed exceptionally poorly on this same Simple Wing problem \cite{kirschen}. Kirschen gave this problem with the exact same initial guess to commercial interior-point and SQP optimizers built into MATLAB's \texttt{fmincon()} solver. Neither optimizer was able to successfully converge to the solution, while AeroSandbox was; a comparison is presented in Table \ref{tab:nlp-compare}. In addition, the numbers from Kirschen in Table \ref{tab:nlp-compare} correspond to IP and SQP runs with exact analytical gradients\footnote{Runs in Kirschen \cite{kirschen} without exact analytical gradients, i.e. finite-difference gradients, perform even worse.}, so the stark performance difference between these methods and AeroSandbox is purely due to differences in optimization algorithms, not gradient quality.
 
-In Table \ref{tab:nlp-compare}, we also benchmark AeroSandbox against GPKit, a specialized framework for solving geometric programs such as Simple Wing. GPKit is benchmarked here with its open-source \texttt{cvxopt} backend in order to facilitate a fair "open-source vs. open-source" comparison. Despite the fact that GPKit is a specialized tool for this particular class of problem, the general-purpose AeroSandbox solver consistently achieves convergence faster on the same hardware.
+In Table \ref{tab:nlp-compare}, we also benchmark AeroSandbox against GPKit\footnote{GPKit is benchmarked here with its open-source \texttt{cvxopt} backend in order to facilitate a fair "open-source vs. open-source" comparison.}, a specialized framework for solving geometric programs such as Simple Wing \cite{gpkit}.  Despite the fact that GPKit is a specialized tool for this particular class of problem, the general-purpose AeroSandbox solver consistently achieves convergence faster on the same hardware.
 
 \begin{table}[H]
     \begin{center}
@@ -1064,7 +1064,7 @@ In the case of an overconstrained system ($m > n$), Eq. \ref{eq:nonlinear-opti},
     \label{fig:opti-norms}
 \end{figure}
 
-In both of these cases, an optimization formulation lets us regularize our ill-posed original nonlinear system into a well-posed optimization problem, with no loss in computational speed.
+In both the underconstrained and overconstrained case, an optimization formulation lets us regularize our ill-posed original nonlinear system into a well-posed optimization problem, with no loss in computational speed.
 
 \subsection{Simultaneous Analysis and Design (SAND)}
 \label{sect:sand}
@@ -1089,7 +1089,7 @@ Of course, the drawback of a SAND architecture is that it does not work on black
 \section{Integrators: Solving ODEs with AeroSandbox}
 \label{sect:integrators}
 
-One category of governing equation that we often wish to solve using a SAND architecture is an ordinary differential equation (ODE). ODEs appear in many appear in any aircraft design optimization problem where dynamics or mission profile are important; as discussed in Section \ref{sect:dynamics}, this represents the vast majority of aerospace cases.
+One category of governing equation that we often wish to solve using a SAND architecture is an ordinary differential equation (ODE). ODEs appear in many aircraft design optimization problems where dynamics or mission profile are important. As discussed in Section \ref{sect:dynamics}, this represents the vast majority of aerospace cases.
 
 In the case of an ODE, the idea of using a SAND architecture essentially entails formulating an implicit integration scheme where relations between timesteps are posed as equality constraints.
 
@@ -1149,9 +1149,9 @@ To solve this ODE within an optimization framework, we first make the observatio
 
 \begin{equation}
     \begin{aligned}
-        F' &= U \\
-        U' &= S \\
-        S' &= -\frac{1 + a}{2}FS - a(1-U^2)\\
+        \diff{F}{\eta} &= U \\
+        \diff{U}{\eta} &= S \\
+        \diff{S}{\eta} &= -\frac{1 + a}{2}FS - a(1-U^2)\\
     \end{aligned}
 \end{equation}
 \noindent
@@ -1217,7 +1217,7 @@ sol = opti.solve()
 
 However, the power of ODE analysis in a SAND architecture extends far beyond simply solving the ODE. Here, we demonstrate this by turning the problem around and performing inverse analysis.
 
-Referring to Figure \ref{fig:fs}, we notice that an interesting phenomenon is occuring for the $a \approx -0.0904$ case. This is an incipient separation flow, which can be identified from the fact that the nondimensional wall shear $S(\eta) = \diff{U}{\eta}$ at the wall ($\eta = 0$) is approaching zero.
+Referring to Figure \ref{fig:fs}, we notice that an interesting phenomenon is occurring for the $a \approx -0.0904$ case. This is an incipient separation flow, which can be identified from the fact that the nondimensional wall shear $S(\eta) = \diff{U}{\eta}$ at the wall ($\eta = 0$) is approaching zero.
 
 However, the value of $a$ for this incipient separation flow is only approximate, and it was found by trial and error. Suppose we now ask: at what exact value of $a$ does the flow separate, as indicated by exactly zero wall shear $S(0)=0$?
 

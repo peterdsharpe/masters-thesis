@@ -15,7 +15,7 @@ This capability to optimize systems that must operate at many different operatin
     \textbf{Examples of Time-Dependency in Aerospace Design}
     \begin{itemize}
         \item A Boeing 787 Dreamliner has a fuel mass fraction of 44.4\%\footnote{With a max fuel load of 223,378 lbs. and a max design takeoff weight of 502,500 lbs.} \cite{boeing787stats}. To first order\footnote{The cruise airspeed of a commercial airliner is typically roughly constant-Mach, and cruise altitude is assumed constant.}, this implies that the aircraft's design lift coefficient also changes by a similar amount over the duration of a max-range flight. An analogous fuel-burn consideration will apply to the design of any combustion-powered flight vehicle, which represent the vast majority of aerospace design problems.
-        \item A solar-powered airplane relies on a cyclical injection of energy into the airborne system via solar insolation. Given the availability of gravitational potential energy as a means of energy storage, energy-optimal trajectories need not be steady-state over a daily cycle.
+%        \item A solar-powered airplane relies on a cyclical injection of energy into the airborne system via solar insolation. Given the availability of gravitational potential energy as a means of energy storage, energy-optimal trajectories need not be steady-state over a daily cycle.
         \item The performance of an orbital launch vehicle is highly dependent on its ascent profile; complex trades between altitude, engine performance, dynamic pressure, and vehicle recoverability abound, with strong implications for even first-order design.
         \item The performance of urban air mobility vehicles depends heavily on takeoff profiles, landing profiles, and emergency cases; these often represent max-power flight conditions that size vehicle propulsion and power systems.
     \end{itemize} % TODO add sources to these
@@ -32,12 +32,12 @@ In the most general sense, the time-evolution of any dynamical system (such as a
     \begin{bmatrix}
         \diff{\big(x_1(t)\big)}{t} \\
         \diff{\big(x_2(t)\big)}{t} \\
-        \dots \\
+        \dots                      \\
     \end{bmatrix} =
     \begin{bmatrix}
         f_1\Big(\vec{x}(t), \vec{u}(t), t\Big) \\
         f_2\Big(\vec{x}(t), \vec{u}(t), t\Big) \\
-        \dots \\
+        \dots                                  \\
     \end{bmatrix}
     \label{eq:ode}
 \end{equation}
@@ -51,7 +51,7 @@ In the most general sense, the time-evolution of any dynamical system (such as a
 
 The simplest method of handling time-dependency here is to make the steady approximation that the system remains at some \textit{trim state} for the entire duration of the mission; for an aircraft, this typically means that all state variables except for position are constant. This implies that the control vector $\vec{u}(t)$ is set in order to make this statement true; for example, throttle setting is set so that airspeed is held constant. Under these assumptions, one can reduce the unsteady system dynamics down to a single, steady operating point that is expected to be representative of the operating envelope.
 
-An example of this approach is found in \textit{SimpleAC}, a canonical problem for passenger aircraft design presented as part of GPKit, a library for aircraft design optimization using geometric programming; a full description of this design problem is given later in Equation \ref{eq:simpleac}. The relevant example from SimpleAC here is the constraint associated with lift-weight balance, which is given as:
+An example of this approach is found in \textit{SimpleAC}, a canonical problem for passenger aircraft design presented as part of GPKit, a library for aircraft design optimization using geometric programming \cite{gpkit}; a full description of this design problem is given later in Equation \ref{eq:simpleac}. The relevant example from SimpleAC here is the constraint associated with lift-weight balance, which is given as:
 
 \begin{equation}
     W_0 + W_w + \frac{1}{2} W_f \leq \frac{1}{2}\rho V^2 C_L S
@@ -200,7 +200,7 @@ A further complication here is that the optimal functions for the state variable
 
 General numerical optimization in an infinite-dimensional space is intractable\footnote{Calculus of variations is a powerful strategy for infinite-dimensional optimization in some cases, though this is an analytical approach rather than a numerical one.}, so we must perform some \textit{transcription} (a generalization of discretization) that converts\footnote{or, more precisely, \textit{projects}} the continuous problem to a tractable finite-dimensional nonlinear program. Many transcription approaches are possible; an excellent review is presented by Kelly in \cite{mpk2015} and \cite{mpk2017}. Examples in the present work generally transcribe ODEs with direct trapezoidal collocation; a full description of this algorithm and broader ODE treatment as relevant to the present work follows in Section \ref{sect:integrators}.
 
-We make a final note here that trajectory optimization is a much more challenging task than simple numerical integration of an ODE. This is primarily because every numerical ODE integrator has \textit{error} due to discretization. In traditional ODE integration, this is a nuisance that can be resolved with increased resolution or higher-order schemes ($h$- and $p$-refinement strategies, respectively). However, in trajectory optimization, the optimizer acts as an adversary that is perennially seeking to exploit and magnify this discretization error. In essence, the optimizer will seek to find any flaw with the ODE integrator and break it in a way that suits the optimization objective. Section \ref{sect:integrators} details several approaches to combat this.
+We make a final note here that trajectory optimization is a much more challenging task than simple numerical integration of an ODE. This is primarily because every numerical ODE integrator has \textit{error} due to discretization. In traditional ODE integration, this is a nuisance that can be alleviated with increased resolution or higher-order schemes ($h$- and $p$-refinement strategies, respectively). However, in trajectory optimization, the optimizer acts as an adversary that is perennially seeking to exploit and magnify this discretization error. In essence, the optimizer will seek to find any flaw with the ODE integrator and break it in a way that suits the optimization objective. Section \ref{sect:integrators} details several approaches to combat this.
 
 \subsubsection{Implications for Design Optimization}
 
@@ -247,12 +247,12 @@ All optimization methods are a tradeoff between \textit{exploration} and \textit
     \label{fig:exploration-exploitation}
 \end{figure}
 
-Neither approach is generally superior to the other, and problems that are trivial with one approach may be wildly intractable with another. In fact, the aptly-named "No Free Lunch" theorem of optimization, as demonstrated by Wolpert and Macready \cite{Wolpert1997}, proves that increased optimizer performance on one class of problems will always come at the expense of performance in another. In effect, proper selection of an optimization algorithm for a problem requires some \textit{a priori} intuition about the objective function and constraints\footnote{In some optimization methods, namely Bayesian optimization, this \textit{a priori} intuition is formally specified as a Bayesian prior, allowing a continuous choice between exploration and exploitation.}.
+Neither approach is generally superior to the other, and problems that are trivial with one approach may be wildly intractable with another. In fact, the aptly-named "No Free Lunch" theorem of optimization, as demonstrated by Wolpert and Macready \cite{Wolpert1997}, proves that increased optimizer performance on one class of problems will always come at the expense of performance in another. In effect, proper selection of an optimization algorithm for a problem requires some \textit{a priori} intuition about the structure of the objective function and constraints\footnote{In some optimization methods, namely Bayesian optimization, this \textit{a priori} intuition is formally specified as a Bayesian prior, allowing a quantifiable, continuously-varying choice between exploration and exploitation.}.
 
 When solving aircraft design optimization problems, there are two primary reasons that it becomes prudent to lean as heavily as possible towards the exploitation side of the optimization spectrum:
 
 \begin{enumerate}
-    \item High-dimensional optimization is completely intractable with exploratory methods due to the curse of dimensionality. This difference in tractability is extreme: in a review of optimization methods for aerodynamic design optimization, Lyu et al. found that population-based methods required approximately $10^6$ times as many function evaluations to reach optimality compared to second-order gradient-based methods \cite{lyu2014} for a 100-variable problem\footnote{which is a relatively small problem by most aircraft design standards}.
+    \item High-dimensional optimization is completely intractable with exploratory methods due to the curse of dimensionality. This difference in tractability is extreme: in a review of optimization methods for aerodynamic design optimization, Lyu et al. found that population-based methods required approximately $10^6$ times as many function evaluations to reach optimality\footnote{as approximated by a small tolerance $\epsilon$ on Lagrangian stationarity and constraint violation} compared to second-order gradient-based methods \cite{lyu2014} for a 100-variable problem\footnote{which is a relatively small problem by most aircraft design standards}.
 
     \item Objective and constraint functions tend to be smooth, or they can be well-approximated by smooth functions with minimal labor. More precisely, functions tend to be at least $C^1$-continuous, which makes them much more amenable to second-order gradient-based methods.
 \end{enumerate}
@@ -263,7 +263,7 @@ Because of this, second-order gradient-based methods are easily the tool of choi
 \section{Addressing Coupled Problems}
 \label{sect:coupling}
 
-A final challenge of aircraft design optimization is that problems are highly coupled between disciplines. This phenomenon is illustrated in Figure \ref{fig:coupled-subsystems}, which shows the driving dependencies that might be considered in the design of a passenger aircraft. Many of these interactions are examined thoroughly by Drela in literature related to the TASOPT design code \cite{Drela2011, tasopt}.
+A final challenge of aircraft design optimization is that problems are highly coupled between disciplines. This phenomenon is illustrated in Figure \ref{fig:coupled-subsystems}, which shows the driving dependencies that might be considered in the design of a passenger aircraft. Many of these interactions are examined thoroughly by Drela in literature related to the TASOPT design code\footnote{TASOPT focuses on the design optimization of modern commercial transport aircraft, exploiting new advances in propulsion and composite structures while addressing new concerns such as noise and emissions.} \cite{Drela2011, tasopt}.
 
 \begin{figure}[H]
     \centering
@@ -275,22 +275,23 @@ A final challenge of aircraft design optimization is that problems are highly co
 
 A key challenge that is observed in Figure \ref{fig:coupled-subsystems} is the presence of internal \textit{closure loops}, or implicit relationships between subsystems. Implicit relations are those that cannot be enforced by explicit, step-by-step calculation; instead, they represent a nonlinear relationship that must be enforced iteratively.
 
-Traditional aircraft design methodologies (such as the one described in detail by Raymer \cite{raymer}) resolve these implicit relationships with a "guess and check" approach: to "close" any given design, an initial guess is assumed at some point, and the loop is iterated until closure. Mathematically, this is analogous to solving a system of nonlinear equations by Gauss-Seidel iteration\footnote{Another analogue to the "guess-and-check" approach is coordinate descent optimization, which mimics the same pattern of sequential, orthogonal, axis-aligned movement throughout the variable space.}; it is not the worst approach for small problems, but it scales exceptionally poorly to problems with many interacting disciplines. Furthermore, closing these implicit relations via "guess and check" means that we would effectively perform "sub-iterations" at each iteration of our optimization algorithm; this is obviously far from ideal if computational performance is desired. Superior methods of solving this closure problem are implemented in the present work and presented in Section \ref{sect:sand}.
+Traditional aircraft design methodologies (such as the one described in detail by Raymer \cite{raymer}) resolve these implicit relationships with a "guess and check" approach: to "close" any given design, an initial guess is assumed at some point, and the loop is iterated until closure. Mathematically, this is analogous to solving a system of nonlinear equations by Gauss-Seidel iteration\footnote{Another analogue to the "guess-and-check" approach is coordinate descent optimization, which mimics the same pattern of sequential, orthogonal, axis-aligned movement throughout the variable space.}; it is not the worst approach for small problems, but it scales poorly to problems with many interacting disciplines. Furthermore, closing these implicit relations via "guess and check" means that we would effectively perform "sub-iterations" at each iteration of our optimization algorithm; this is obviously far from ideal if computational performance is desired. Superior methods of solving this closure problem are implemented in the present work and presented in Section \ref{sect:sand}.
 
 \subsection{The Origins of Coupling}
 
-Coupling between disciplines is not unique to aerospace design, although we claim here that it is generally far more of a challenge in aerospace than in other engineering applications. We posit this hypothesis for two reasons:
+Coupling between disciplines is not unique to aerospace design, although we observe that aerospace tends to be one of the more coupled and complex engineering disciplines. We posit that this is the case for two reasons:
 
 \begin{enumerate}
     \item On a free-flying aerospace system, there is rarely something that can act as a global source or sink for conserved quantities such as mass, momentum, energy, heat, and charge. If we imagine some classical engineering design problems, we observe a similar trend:
     \begin{itemize}
-        \item The design of a typical cantilevered beam assumes a fixed support
-        \item The design of a typical circuit assumes an electrical ground
+        \item The design of a typical cantilevered beam assumes a fixed support.
+        \item The design of a typical circuit assumes an electrical ground.
         \item The design of a typical automobile engine assumes some place for heat rejection.
     \end{itemize}
     By contrast, aerospace systems have nothing to "push off of": each force and moment must be perfectly balanced with another to achieve steady, level flight. This requirement for balance between disciplines often manifests as a cross-discipline constraint, leading to coupling.
-    \item Aerospace systems often exhibit high performance sensitivities with respect to size, weight, and power. These sensitivities conspire to encourage multifunctional and highly-integrated design. While this design philosophy leads to enhanced performance, it inevitably means that any subsystem's allocation to size, weight, or power comes at the direct expense of another's.
+    \item Aerospace systems tend to have low margin, which leads to high performance sensitivities with respect to size, weight, and power. These sensitivities conspire to encourage multifunctional and highly-integrated design. While this design philosophy leads to enhanced performance, it inevitably means that any subsystem's allocation to size, weight, or power comes at the direct expense of another's.
 \end{enumerate}
+
 
 \section{Summary}
 

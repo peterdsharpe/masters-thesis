@@ -10,7 +10,7 @@
 \section{Surrogate Modeling Tools}
 \label{sect:surrogate}
 
-It is critical that a general-purpose engineering design optimization framework such as AeroSandbox allows the use of user-defined physics models. These models can generally be classified into one of three categories:
+It is critical that a general-purpose framework for engineering design optimization such as AeroSandbox allows the use of user-defined physics models. These models can generally be classified into one of three categories:
 
 \begin{enumerate}[noitemsep]
     \item \textbf{Analytical models}, which are often derived theoretically and can be specified concisely in closed-form. For example, an analytical relation for aircraft drag, as given by Drela \cite{drela-performance-lab} is:
@@ -83,7 +83,7 @@ One approach to creating a surrogate model is curve fitting, or more formally, \
     \[ \vec{e} = \vec{y}_\text{model} - \vec{y} \]
 
     \noindent
-    We then seek to find the optimal value of the model parameters $\vec{\theta}$ by solving the following optimization problem:
+    We then seek the optimal value of the model parameters $\vec{\theta}$ by solving the following optimization problem:
 
     \begin{argmini}
     {\vec{\theta}}{ \big\Vert \vec{e} \big\Vert _2 }
@@ -103,11 +103,11 @@ One approach to creating a surrogate model is curve fitting, or more formally, \
 
 This forms the canonical fitting problem, also known as least-squares regression. Because Equation \ref{eq:fitting} is an optimization problem with entirely glass-box functions, it is efficiently differentiated and solved by AeroSandbox. This functionality is provided by the \mintinline{python}{asb.FittedModel} class, which acts both as the fitting solver (performed upon instantiation) and the callable model itself.
 
-The generality of the model format in Eq. \ref{eq:fitting-model} is quite powerful, as the fitting routine presented here can use any composition of elementary operators as its model format. In addition, this optimization approach can fit piecewise functions and expressions that can only be tractably expressed in code (e.g. model formats with loops, complicated conditionals). The AeroSandbox \mintinline{python}{FittedModel} implementation can also be used to fit datasets with general multidimensional inputs. Furthermore, because the fitting optimization problem can utilize fast gradients via automatic differentiation, fitting performance scales efficiently with parameter dimensionality\footnote{analogous to the scaling seen in Figure \ref{fig:nd-rosen}}.
+The generality of the model format in Eq. \ref{eq:fitting-model} is quite powerful, as the fitting routine presented here can use any composition of elementary operators as its model format. In addition, this optimization approach can fit piecewise functions and expressions that can only be tractably expressed in code (e.g., model formats with loops, complicated conditionals). The AeroSandbox \mintinline{python}{FittedModel} implementation can also be used to fit datasets with general multidimensional inputs. Furthermore, because the fitting optimization problem can utilize fast gradients via automatic differentiation, fitting performance scales efficiently with parameter dimensionality\footnote{analogous to the scaling seen in Figure \ref{fig:nd-rosen}}.
 
 \subsubsection{Example: Wind Analysis}
 
-The power of this generality is demonstrated in Figure \ref{fig:fitting-wind}, where the AeroSandbox \mintinline{python}{FittedModel} routine is used to regress a model for peak\footnote{Quantified as the 99th-percentile of wind speed over time} wind speeds at various points in the atmosphere above the continental United States in August\footnote{Averaged over years 1979-2020}. This model holds great importance for high-altitude long-endurance (HALE) aircraft design: the primary failure mode of HALE aircraft in the past two decades has been in-flight aerostructural failure exacerbated by wind gusts. The underlying 2D dataset in this example was obtained via statistical analysis of the ERA5 Global Reanalysis meteorological dataset \cite{era5}.
+The power of this generality is demonstrated in Figure \ref{fig:fitting-wind}, where the AeroSandbox \mintinline{python}{FittedModel} routine is used to regress a model for peak\footnote{Quantified as the 99th-percentile of wind speed over time} wind speeds at various points in the atmosphere above the continental United States in August\footnote{Averaged over years 1979-2020}. This model holds great importance for high-altitude long-endurance (HALE) aircraft design: the primary failure mode of HALE aircraft in the past two decades has been in-flight aerostructural failure following excitation via wind gusts. The underlying 2D dataset in this example was obtained via statistical analysis of the ERA5 Global Reanalysis meteorological dataset \cite{era5}.
 
 \begin{figure}[H]
     \centering
@@ -119,7 +119,7 @@ The power of this generality is demonstrated in Figure \ref{fig:fitting-wind}, w
 
 There is a clear and strong nonlinearity present in this dataset, evidenced by the sharp rise in peak wind speeds near (15 km altitude, 50 deg. N latitude). This nonlinearity, which depicts the Arctic polar vortex of the jet stream, makes this a challenging dataset to fit. Here, an 18-parameter model consisting of a combination of polynomials and Gaussian-like terms was used to fit the data.
 
-The resulting model from this fitting process is not only cheaply evaluated, but it is also end-to-end automatic differentiable. This means that it can be used as desired in the optimization framework described in Chapter \ref{chapter:core}. Fitting also tends to remove noise from the dataset, which makes optimization much more well behaved. This noise removal occurs because the fit is essentially a projection of the dataset noise (generally relatively high-spatial-frequency\footnote{In the common case of uncorrelated random error, the noise follows a \textit{white noise} spectrum}) onto the mode shapes associated with model linearization with respect to $\vec{\theta}$ (generally relatively low-spatial-frequency). Because of these desirable properties, curve fitting is a good tool for creating surrogate models from experimental or synthetic datasets.
+The resulting model from this fitting process is not only cheaply evaluated, but it is also end-to-end automatic differentiable. This means that it can be used as desired in the optimization framework described in Chapter \ref{chapter:core}. Fitting also tends to remove noise from the dataset, which makes optimization much more well-behaved. This noise rejection occurs because the fit is essentially a projection of the dataset noise (generally relatively high-spatial-frequency\footnote{In the common case of uncorrelated random error, the noise follows a \textit{white noise} spectrum}) onto the mode shapes associated with model linearization with respect to $\vec{\theta}$ (generally relatively low-spatial-frequency). Because of these desirable properties, curve fitting is a good tool for creating surrogate models from experimental or synthetic datasets.
 
 The classical ordinary least-squares fitting problem described in Equation \ref{eq:fitting} can be extended in several interesting ways in order to obtain fits with more desirable characteristics. Several of these generalizations have been implemented into the AeroSandbox surrogate modeling toolkit via the \mintinline{python}{asb.FittedModel} class. These features are described in the following sections.
 
@@ -152,7 +152,7 @@ The primary practical distinction between fits using these various norms is thei
     \centering
 %    \input{figures/fitting-norm.pgf}
     \ifdraft{}{\input{figures/fitting-norm.pgf}}
-    \caption{Fitting with various norms on an synthetic dataset with an outlier.}
+    \caption{Fitting with various norms on a synthetic dataset with an outlier.}
     \label{fig:fitting-norm}
 \end{figure}
 
@@ -191,7 +191,7 @@ A common example quantity that demonstrates this phenomenon is aerodynamic drag,
 
 Using the AeroSandbox fitting module, a relatively parsimonious analytical model can be fit that accurately predicts (and extrapolates) cylinder drag for any Reynolds number. Surprisingly, the author has not found any other such universal model for cylinder drag in the literature.
 
-Because of the logarithmic importance of drag coefficient, the fitting module \mintinline{python}{asb.FittedModel} is supplied with \mintinline{python}{put_residuals_in_logspace=True} at initialization. The resulting model, which minimizes log-transformed error with respect to the experimental dataset, is as follows:
+Because of the logarithmic importance of drag coefficient, we instruct the fitting module \mintinline{python}{asb.FittedModel} to minimize the log-transformed error of the fit with respect to the experimental dataset, rather than the error itself\footnote{This is performed by supplying \mintinline{python}{asb.FittedModel} with the \mintinline{python}{put_residuals_in_logspace=True} argument.}. The resulting model is as follows:
 
 \newcommand{\logt}{\log_{10}}
 \newcommand{\logtr}{\logt(\text{Re})}
@@ -201,7 +201,7 @@ Because of the logarithmic importance of drag coefficient, the fitting module \m
     \textbf{Cylinder Drag Fitted Model}
 
     \noindent
-    First, models for subcritical (i.e. below drag crisis) and supercritical drag are computed:
+    First, models for subcritical (i.e., below drag crisis) and supercritical drag are computed:
     \begin{equation*}
         \begin{aligned}
             r &= \logtr \\
@@ -257,12 +257,12 @@ These $n$-dimensional spline interpolators are demonstrated in Figure \ref{fig:i
 
 This lookup-table approach to surrogate modeling is quite convenient to use when compared to the fitting approach described in Section \ref{sect:fitting}. With a high-quality dataset, little-to-no engineering effort is need to create a surrogate model; by contrast, the fitting approach requires engineering intuition about the type of analytical model that best describes the data.
 
-However, this interpolation approach is not without drawbacks. First, the b-spline interpolators implemented in AeroSandbox have no ability to reject noise - surrogate models will always pass exactly through input data points (as these form the knots of the spline). Splines also do not preserve monotonicity of the dataset: on datasets with low signal-to-noise ratios\footnote{In particular, this is an issue on some experimental datasets}, this can lead to wild oscillations as the interpolator attempts to model the random noise. This can even occur on datasets with moderate noise if the input space is not approprately sampled\footnote{Often, typical linear full-factorial sampling is quite a poor choice; using Chebyshev nodes often produces far superior results for a given number of data points. A fuller description is given in Chapter 13 of \cite{koch2019}.}, a numerical problem known as Runge's phenomenon. Noisy datasets can also be effectively used if they are pre-processed by smoothing with several passes of a Laplacian (i.e. "heat equation") kernel. This process, sometimes referred to as the application of a \textit{Gaussian blur}, yields more well-behaved interpolators at the cost of accuracy to the original dataset.
+However, this interpolation approach is not without drawbacks. First, the b-spline interpolators implemented in AeroSandbox have no ability to reject noise - surrogate models will always pass exactly through input data points (as these form the knots of the spline). Splines also do not preserve monotonicity of the dataset: on datasets with low signal-to-noise ratios\footnote{In particular, this is an issue on some experimental datasets}, this can lead to wild oscillations as the interpolator attempts to model the random noise. This can even occur on datasets with moderate noise if the input space is not appropriately sampled\footnote{Often, typical linear full-factorial sampling is quite a poor choice; using Chebyshev nodes often produces far superior results for a given number of data points. A fuller description is given in Chapter 13 of \cite{koch2019}.}, a numerical problem known as Runge's phenomenon. Noisy datasets can also be effectively used if they are pre-processed by smoothing with several passes of a Laplacian (i.e., "heat equation") kernel. This process, sometimes referred to as the application of a \textit{Gaussian blur}, yields more well-behaved interpolators at the cost of accuracy to the original dataset.
 
-The lookup-table approach also necessitates the use of structured (i.e. gridded in $n$ dimensions) data, rather than unstructured (i.e. "point cloud") data. This is because the interpolation consists of a collection of piecewise polynomials, and these polynomials must be linked back to specific knot points (drawn from the dataset) to determine their shape. With unstructured data, it is quite difficult to know which knot points should be used for a given polynomial.
+The lookup-table approach also necessitates the use of structured (i.e., gridded in $n$ dimensions) data, rather than unstructured (i.e., "point cloud") data. This is because the interpolation consists of a collection of piecewise polynomials, and these polynomials must be linked back to specific knot points (drawn from the dataset) to determine their shape. With unstructured data, it is quite difficult to know which knot points should be used for a given polynomial.
 
-Most synthetic datasets (e.g. those from expensive, high-fidelity computational analysis) tend to be structured, so this is not a problem. Conveniently, these datasets also tend to lend themselves well to interpolation as they generally have no random noise.
+Most synthetic datasets (e.g., those from expensive, high-fidelity computational analysis) tend to be structured, so this is not a problem. Conveniently, these datasets also tend to lend themselves well to interpolation as they generally have no random noise.
 
-On the other hand, many experimental datasets tend to be unstructured, which prohibits the use of AeroSandbox interpopation as-is. Hence, fitting is generally preferred. Fitting also tends to be a superior choice for experimental datasets due to their better noise rejection.
+On the other hand, many experimental datasets tend to be unstructured, which prohibits the use of AeroSandbox interpolation as-is. Hence, fitting is generally preferred. Fitting also tends to be a superior choice for experimental datasets due to their better noise rejection.
 
-In the event that interpolation is desired on an unstructured dataset, an approach that has been proven successful is to interpolate the unstructured dataset onto a structured grid using a radial basis function (RBF) interpolator, at which point the AeroSandbox spline interpolator in \mintinline{python}{asb.InterpolatedModel} can be used.
+In the event that one desires interpolation on an unstructured dataset, an approach that has been proven successful is to interpolate the unstructured dataset onto a structured grid using a radial basis function (RBF) interpolator, at which point the AeroSandbox spline interpolator in \mintinline{python}{asb.InterpolatedModel} can be used.
