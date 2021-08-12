@@ -22,8 +22,8 @@ Here, we present several design optimization guidelines that have been collected
     \end{enumerate}
     \item \textbf{When an incorrect result is returned, it's nearly always the "right solution to the wrong problem", rather than the "wrong solution to the right problem".}
     \begin{enumerate}
-        \item If a strange solution, error, or indication of infeasiblity or unboundedness is reported when this was not expected, this often indicates an error in problem formulation. Common culprits are forgotten or unnecessary constraints, constraints that are unintentionally too loose or tight, duplicated constraints, etc.
-        \item If initial guesses or problem scales are off by many orders of magnitude, this can also cause convergence issues. Strong nonconvexities (e.g. a model interpolating noisy data) can also cause problems.
+        \item If a strange solution, error, or indication of infeasibility or unboundedness is reported when this was not expected, this often indicates an error in problem formulation. Common culprits are forgotten or unnecessary constraints, constraints that are unintentionally too loose or tight, duplicated constraints, etc.
+        \item If initial guesses or problem scales are off by many orders of magnitude, this can also cause convergence issues. Strong nonconvexities (e.g., a model interpolating noisy data) can also cause problems.
     \end{enumerate}
     \item \textbf{Optimization is just one tool in the design toolbox.}
     \begin{enumerate}

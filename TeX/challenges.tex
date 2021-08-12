@@ -9,7 +9,7 @@ Aircraft design optimization problems tend to present several unique challenges 
 
 Perhaps the first major challenge with aircraft design optimization is that we are optimizing systems that are inherently time-dependent and dynamic: colloquially, performance depends not only on \textit{what} you fly, but also \textit{how} you fly. Therefore, we require a means to optimize parameters of dynamical systems. An example of this would be optimizing the wing area of an airplane throughout a prescribed mission - a single, fixed value must provide optimal performance when integrated across all flight conditions.
 
-This capability to optimize systems that must operate at many different operating points is critical in aircraft design. With rare exceptions, nearly all aircraft operate at very different operating points throughout their missions. Examples of this time-dependency in aerospace problems abound.
+This capability to optimize systems that must operate at many distinct operating points is critical in aircraft design. With rare exceptions, nearly all aircraft operate at very different operating points throughout their missions. Examples of this time-dependency in aerospace problems abound.
 
 \begin{example}
     \textbf{Examples of Time-Dependency in Aerospace Design}
@@ -111,7 +111,7 @@ For slightly improved fidelity, one can split the given mission up into segments
 
 For each of these segments, a representative operating point (or closed-form approximation to one analogous to the Breguet equation) is chosen. In addition, each of these operating points might be augmented with various perturbations about this point, allowing consideration of off-design performance.
 
-Performance is analyzed at each of these individual points. Finally, to obtain a scalar objective function, some reduction (e.g. integration with respect to time, linear combination, or worst-case performance) is then done by combining performance metrics across all analyzed operating points.
+Performance is analyzed at each of these individual points. Finally, to obtain a scalar objective function, some reduction (e.g., integration with respect to time, linear combination, or worst-case performance) is then done by combining performance metrics across all analyzed operating points.
 
 This is a basic example of \textit{multipoint optimization}, an approach to robust design where a design is optimized based on an aggregate of its performance at a finite number of operating conditions.
 
@@ -131,7 +131,7 @@ This "full simulation" approach is the one most studied in the present work, bec
 To simulate the full vehicle dynamics (as something like a flight simulator might do), we first need to identify the relevant state variables. There are several common sources for these state variables:
 
 \begin{itemize}
-    \item \textbf{Flight Dynamics:} Any rigid free-flying body has 12 state variables that describe its motion at a given moment in time \cite{fva}. These can be grouped into four categories, each of which is a vector containing three degrees of freedom\footnote{In a Cartesian sense, each category (e.g. position) has $x$, $y$, and $z$ components in some frame}: position, orientation, velocity, and angular velocity. A Cartesian illustration of these 12 state variables is given in Figure \ref{fig:flight-dynamics-vars}. Each of these 12 state variables has an associated ODE related to the equations of motion.
+    \item \textbf{Flight Dynamics:} Any rigid free-flying body has 12 state variables that describe its motion at a given moment \cite{fva}. These can be grouped into four categories, each of which is a vector containing three degrees of freedom\footnote{In a Cartesian sense, each category (e.g. position) has $x$, $y$, and $z$ components in some frame}: position, orientation, velocity, and angular velocity. A Cartesian illustration of these 12 state variables is given in Figure \ref{fig:flight-dynamics-vars}. Each of these 12 state variables has an associated ODE related to the equations of motion.
     \begin{figure}
         \centering
 %        \ifdraft{}{\includegraphics{}}
@@ -140,9 +140,9 @@ To simulate the full vehicle dynamics (as something like a flight simulator migh
         \label{fig:flight-dynamics-vars}
     \end{figure}
 
-    \item \textbf{Power Systems Accounting:} Any aircraft with a depletable onboard power source (e.g. stored fuel or a battery) will have a state variable that describes the energy remaining\footnote{In reality, a system might have multiple state variables here to correspond to multiple fuel tanks or batteries, but this consideration is neglected here for simplicity.}. The associated ODE relates energy depletion rate to a control input such as throttle setting.
-    \item \textbf{Propulsion State:} Aerospace propulsion systems exhibit hysteresis (i.e. "lag") in response to control inputs. Many notable examples, such as turbofan spool time and quadcopter propeller inertia, result in dynamic performance limits that are significant enough to have direct operational consequences. However, these lag effects typically do not affect vehicle performance in a way that is significant to design optimization, so they are neglected for the remainder of this work. % TODO elaborate?
-    \item \textbf{Flexible Airframes:} Flexible bodies (e.g. a wing experiencing considerable aeroelastic effects) contribute an infinite number of state variables to a dynamic system. (In practice, this would be discretized to a large but finite number of structural degrees of freedom.) Due to the difficulty of modeling this, we often assume that any coupling between aeroelastic effects and rigid body flight dynamics can be adequately treated with surrogate models as in Section \ref{sect:surrogate}; thus, this coupling is neglected for the remainder of this work.
+    \item \textbf{Power Systems Accounting:} Any aircraft with a depletable onboard power source (e.g., stored fuel or a battery) will have a state variable that describes the energy remaining\footnote{In reality, a system might have multiple state variables here to correspond to multiple fuel tanks or batteries, but this consideration is neglected here for simplicity.}. The associated ODE relates energy depletion rate to a control input such as throttle setting.
+    \item \textbf{Propulsion State:} Aerospace propulsion systems exhibit hysteresis (i.e., "lag") in response to control inputs. Many notable examples, such as turbofan spool time and quadcopter propeller inertia, result in dynamic performance limits that are significant enough to have direct operational consequences. However, these lag effects typically do not affect vehicle performance in a way that is significant to design optimization, so they are neglected for the remainder of this work. % TODO elaborate?
+    \item \textbf{Flexible Airframes:} Flexible bodies (e.g., a wing experiencing considerable aeroelastic effects) contribute an infinite number of state variables to a dynamic system. (In practice, this would be discretized to a large but finite number of structural degrees of freedom.) Due to the difficulty of modeling this, we often assume that any coupling between aeroelastic effects and rigid body flight dynamics can be adequately treated with surrogate models as in Section \ref{sect:surrogate}; thus, this coupling is neglected for the remainder of this work.
 \end{itemize}
 
 Thus, flight dynamics and power systems accounting represent the two categories of state variables that we nearly always need to account for. Between these two categories, a basic aerospace system typically has 13 state variables.
@@ -194,13 +194,13 @@ Using this ODE approach, the state of the modeled aerospace system can be repres
     \label{eq:fd-vars-subbed}
 \end{equation}
 
-These state variables are general functions of time, and a general function space such as this is an infinite-dimensional: specifically, it is a Hilbert space. In other words, an infinite amount of information is required to fully describe any general function. Even functions with a finite domain (e.g. airspeed over a fixed-duration mission) are infinite-dimensional, as a general representation still requires an infinite amount of information\footnote{An illustration of this is the fact that it takes an infinite number of Fourier terms to exactly represent an arbitrary function on a finite domain.}.
+These state variables are general functions of time, and a general function space such as this is an infinite-dimensional: specifically, it is a Hilbert space. In other words, an infinite amount of information is required to fully describe any general function. Even functions with a finite domain (e.g., airspeed over a fixed-duration mission) are infinite-dimensional, as a general representation still requires an infinite amount of information\footnote{An illustration of this is the fact that it takes an infinite number of Fourier terms to exactly represent an arbitrary function on a finite domain.}.
 
 A further complication here is that the optimal functions for the state variables (collectively referred to as the \textit{trajectory}) are not known \textit{a priori}; indeed, this represents a \textit{trajectory optimization} problem that must be solved simultaneously with the vehicle optimization problem.
 
 General numerical optimization in an infinite-dimensional space is intractable\footnote{Calculus of variations is a powerful strategy for infinite-dimensional optimization in some cases, though this is an analytical approach rather than a numerical one.}, so we must perform some \textit{transcription} (a generalization of discretization) that converts\footnote{or, more precisely, \textit{projects}} the continuous problem to a tractable finite-dimensional nonlinear program. Many transcription approaches are possible; an excellent review is presented by Kelly in \cite{mpk2015} and \cite{mpk2017}. Examples in the present work generally transcribe ODEs with direct trapezoidal collocation; a full description of this algorithm and broader ODE treatment as relevant to the present work follows in Section \ref{sect:integrators}.
 
-We make a final note here that trajectory optimization is a much more challenging task than simple numerical integration of an ODE. This is primarily because every numerical ODE integrator has \textit{error} due to discretization. In traditional ODE integration, this is a nuisance that can be alleviated with increased resolution or higher-order schemes ($h$- and $p$-refinement strategies, respectively). However, in trajectory optimization, the optimizer acts as an adversary that is perennially seeking to exploit and magnify this discretization error. In essence, the optimizer will seek to find any flaw with the ODE integrator and break it in a way that suits the optimization objective. Section \ref{sect:integrators} details several approaches to combat this.
+We make a final note here that trajectory optimization is a much more challenging task than simple numerical integration of an ODE. This is primarily because every numerical ODE integrator has \textit{error} due to discretization. In traditional ODE integration, this is a nuisance that can be alleviated with increased resolution or higher-order schemes ($h$- and $p$-refinement strategies, respectively). However, in trajectory optimization, the optimizer acts as an adversary that is perennially seeking to exploit and magnify this discretization error. In essence, the optimizer will seek any flaw with the ODE integrator and break it in a way that suits the optimization objective. Section \ref{sect:integrators} details several approaches to combat this.
 
 \subsubsection{Implications for Design Optimization}
 
@@ -217,7 +217,7 @@ This means that the aircraft sizing problem can be decomposed into two strongly-
 \section{High-Dimensional Optimization}
 \label{sect:high-dim-opt}
 
-A second common challenge of aircraft design optimization is that design spaces tend to be quite high-dimensional. While first-order sizing studies might only consider a few variables (e.g. wing aspect ratio, wing area, and cruise airspeed), more sophisticated studies can easily have hundreds or thousands of design variables.
+A second common challenge of aircraft design optimization is that design spaces tend to be quite high-dimensional. While first-order sizing studies might only consider a few variables (e.g., wing aspect ratio, wing area, and cruise airspeed), more sophisticated studies can easily have hundreds or thousands of design variables.
 
 There are two primary culprits for the high number of design variables in aerospace problems: dynamics parameterization and outer mold line\footnote{The outer mold line represents the outermost, air-facing surface of the vehicle - essentially, the "vehicle shape".} (OML) parameterization. The rationale for the high dimensionality of dynamics parameterization was previously addressed in Section \ref{sect:dynamics-parameterization}: the state variables $x_e(t), V(t)$, etc. are functions of time, and time discretization results in many degrees of freedom.
 
@@ -233,7 +233,7 @@ A simple and common aerospace example that illustrates this challenge is the pro
 \end{figure}
 \footnotetext{Assumes each node contributes one degree of freedom; a reasonable approximation because only normal node movement affects OML shape.}
 
-When we consider that an airplane often has several different airfoils along its span, each of which is optimized for a different local flow field, it is clear that reasonably-accurate parameterization of an aircraft OML might easily require hundreds of variables.
+When we consider that an airplane often has several airfoils along its span, each of which is optimized for a different local flow field, it is clear that reasonably-accurate parameterization of an aircraft OML might easily require hundreds of variables.
 
 \subsection{Addressing the Curse of Dimensionality}
 
@@ -299,7 +299,7 @@ Here, we have discussed several key challenges that are especially prominent in 
 
 \begin{enumerate}
     \item Aerospace systems are inherently dynamic, and hence require careful modeling.
-    \item Aerospace systems are high-dimensional, which precludes the tractable use of many kinds of optimization algortihms.
+    \item Aerospace systems are high-dimensional, which precludes the tractable use of many kinds of optimization algorithms.
     \item Aerospace systems are highly-coupled, which means an optimizer must be scalable to large problems and robust to strong nonlinearities.
 \end{enumerate}
 
