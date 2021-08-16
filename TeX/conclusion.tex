@@ -7,6 +7,8 @@ In closing, we summarize contributions made and outline a plethora of potential 
 
 This thesis has demonstrated the advantages of a unified, end-to-end automatic-differentiable framework for engineering design optimization, with specific applications to aircraft design. After identifying the key components of such a framework, we implement such a framework in the form of an open-source Python library called \textit{AeroSandbox}. The performance of this tool is demonstrated on several aerospace design problems throughout Chapter \ref{chapter:core}, where it outperforms state-of-the-art optimization frameworks in speed while also offering increased modeling flexibility.
 
+In addition to the framework's high-performance optimization core, we also present several tools that support model creation for user problems. These models can then be easily connected to build sophisticated and specialized optimization tools for various engineering problems.
+
 %\subsection{Comparison to other Frameworks}
 %\label{sect:compare}
 %
@@ -19,7 +21,7 @@ This thesis has demonstrated the advantages of a unified, end-to-end automatic-d
 
 \section{Future Work}
 
-While the framework developed in this thesis is shown to have strong optimization fundamentals and promising extensibility, the applications and benchmarks here are deliberately simple by nature. To summarize the ideas for future work, many auspicious research directions involve developing higher-fidelity differentiable models, integrating with more tools, and providing options to abstract away various common aerospace operations.
+While the framework developed in this thesis has strong optimization fundamentals and extensibility, the applications and benchmarks presented in this work are relatively simple. This increases readability and reproducibility, but it does not fully illustrate the complexity of design problems that can be solved with this automatic-differentiable approach. To summarize the ideas for future work, many auspicious research directions involve developing higher-fidelity differentiable models, integrating with more tools, and providing options to abstract away various common aerospace operations.
 
 \subsubsection{Black-Box Functions and Finite Differencing}
 \label{sect:future-work-black-box}
