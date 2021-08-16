@@ -22,7 +22,7 @@
 # *.pdf
 
 ## User Files
-*.pdf
+main.pdf
 .idea/
 .vscode/
 *.pyc
