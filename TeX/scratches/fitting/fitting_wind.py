@@ -175,5 +175,5 @@ plt.subplots_adjust(
     top=0.90
 )
 show_plot(pretty_grids=False, tight_layout=False, show=False)
-plt.savefig(r"C:\Users\User\Dropbox (MIT)\School\Grad School\2021 Spring\Thesis\TeX\figures\fitting-wind.pgf")
+# plt.savefig(r"C:\Users\User\Dropbox (MIT)\School\Grad School\2021 Spring\Thesis\TeX\figures\fitting-wind.pgf")
 plt.show()
